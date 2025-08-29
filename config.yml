@@ -6,11 +6,11 @@ engines:
     name: "sf"                     # Binary name of the engine to use.
     ponder: true                          # Think on opponent's time.
     silence_stderr: false                 # Suppresses stderr output.
-    move_overhead_multiplier: 5.5         # Optimized for bullet games.
+    move_overhead_multiplier: 6.0         # Optimized for bullet games.
     uci_options:                          # Arbitrary UCI options passed to the engine.
       Threads: 8                          # Increased threads for Threadripper power.
       Hash: 8192                           # Increased hash for better position evaluation.
-      Move Overhead: 255                  # Reduced for faster bullet moves.
+      Move Overhead: 265                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
       Slow Mover: 55
     limits:
@@ -19,24 +19,24 @@ engines:
     name: "sf"                     # Binary name of the engine to use.
     ponder: true                          # Think on opponent's time.
     silence_stderr: false                 # Suppresses stderr output.
-    move_overhead_multiplier: 5.5         # Optimized for bullet games.
+    move_overhead_multiplier: 6.0         # Optimized for bullet games.
     uci_options:                          # Arbitrary UCI options passed to the engine.
       Threads: 8                          # Increased threads for Threadripper power.
       Hash: 8192                           # Increased hash for better position evaluation.
-      Move Overhead: 255                  # Reduced for faster bullet moves.
+      Move Overhead: 265                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 100
+      Slow Mover: 60
     limits:   
   chess960:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
     name: "sf"                     # Binary name of the engine to use.
     ponder: true                          # Think on opponent's time.
     silence_stderr: false                 # Suppresses stderr output.
-    move_overhead_multiplier: 5.5         # Increase if your bot flags games too often. Default move overhead is 1 second per 1 minute initital time.
+    move_overhead_multiplier: 6.0         # Increase if your bot flags games too often. Default move overhead is 1 second per 1 minute initital time.
     uci_options:                          # Arbitrary UCI options passed to the engine.
       Threads: 8                          # Max CPU threads the engine can use.
       Hash: 8192                           # Max memory (in megabytes) the engine can allocate.
-      Move Overhead: 255                  # Increase if your bot flags games too often.
+      Move Overhead: 265                  # Increase if your bot flags games too often.
       Minimum Thinking Time: 0
       Slow Mover: 55
     limits:
@@ -98,7 +98,7 @@ opening_books:
   read_learn: false                       # Whether to read the learn values from the books.
   books:
     bullet_white:                            # Other bullet games (1+0)
-      selection: best_move
+      selection: weighted_random
       # max_depth: 20                    # Limit book depth so engine evaluates positions
       names:
         - white_1
@@ -112,7 +112,7 @@ opening_books:
         - white_2
         # - owen_bullet
     0.5+0_white:                             
-      selection: best_move
+      selection: weighted_random
       names:
         # - white_2
         # - white_3
@@ -122,10 +122,9 @@ opening_books:
       names:
         - white_2
     1+0_white:                            
-      selection: best_move
+      selection: weighted_random
       names:
-        - white_3
-        - white_1
+        - nimas
     1+0_black:                            
       selection: best_move
       names:
@@ -142,7 +141,7 @@ opening_books:
         # - white_3
         # - owen_rapid
     blitz_white:                             
-      selection: best_move
+      selection: weighted_random
       names:
         # - white_3
         # - white_2
