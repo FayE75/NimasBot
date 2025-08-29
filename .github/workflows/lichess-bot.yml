@@ -162,10 +162,14 @@ jobs:
           local fen="$1"
           local depth="$2"
         
+          run_workload() {
+          local fen="$1"
+          local depth="$2"
+        
           if [ "$PERFT_SUPPORTED" -eq 1 ]; then
             printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
           else
-            printf "uci\nucinewgame\nisready\nposition fen %s\nisready\ngo depth %d\nquit\n" "$fen" "$depth" | "${instr_bin}" 2>&1 \
+            printf "uci\nucinewgame\nisready\nposition fen %s\ngo depth %d\nquit\n" "$fen" "$depth" | "${instr_bin}" 2>&1 \
               | sed '/^option name/ d' > /tmp/pgo_perft_out.txt || true
           fi
         }
