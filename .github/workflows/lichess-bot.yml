@@ -165,10 +165,10 @@ jobs:
           if [ "$PERFT_SUPPORTED" -eq 1 ]; then
             printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
           else
-            printf "uci\nposition fen %s\nisready\nreadyok\ngo depth %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
+            printf "uci\nucinewgame\nisready\nposition fen %s\nisready\ngo depth %d\nquit\n" "$fen" "$depth" | "${instr_bin}" 2>&1 \
+              | sed '/^option name/ d' > /tmp/pgo_perft_out.txt || true
           fi
         }
-        
         idx=0
         while [ $(date +%s) -lt $END_TS ]; do
           for fen in "${FENS[@]}"; do
