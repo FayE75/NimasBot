@@ -307,7 +307,7 @@ offer_draw:
   enabled: false                           # Activate whether the bot should offer draw.
   score: 10                                # Tighter draw threshold - only accept truly equal positions.
   consecutive_moves: 5                   # More moves required before considering draw.
-  min_game_length: 40                     # Later draw offers to avoid early draws.
+  min_game_length: 60                     # Later draw offers to avoid early draws.
   against_humans: false                    # Activate whether these settings should apply against humans.
   allow_in_tournaments: false             # Allow offering draws in tournaments even for 0.5+0 games. By default, draws are never offered in 0.5+0 games.
   accept_30_second_draws: false          
@@ -468,6 +468,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
