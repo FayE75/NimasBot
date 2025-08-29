@@ -269,14 +269,17 @@ jobs:
     - name: Setup token
       run: |
         python3 << 'EOF'
-        import yaml
+        import yaml, os
         try:
             with open('config.yml', 'r') as f:
                 config = yaml.safe_load(f) or {}
-            config['token'] = "${{ secrets.LICHESS_TOKEN }}"
+            config['token'] = os.environ['LICHESS_TOKEN']
+            config.setdefault('engine', {})
+            config['engine']['dir'] = './engines'
+            config['engine']['name'] = 'stockfish'
             with open('config.yml', 'w') as f:
                 yaml.dump(config, f, default_flow_style=False)
-            print("✅ Token configuration successful")
+            print("✅ Configuration successful")
         except Exception as e:
             print(f"❌ Error: {e}")
             exit(1)
