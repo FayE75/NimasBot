@@ -142,13 +142,31 @@ jobs:
           echo "Bench either not supported or timed out; saved to /tmp/pgo_bench_instrumented.txt"
           tail -n 20 /tmp/pgo_bench_instrumented.txt || true
         fi
+        
         START_TS=$(date +%s)
         END_TS=$((START_TS + PGO_RUN_TIME))
         echo "Perft loop will run until epoch $END_TS (now: $START_TS)."
+        
+        PERFT_SUPPORTED=0
+        probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
+        if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
+          PERFT_SUPPORTED=1
+          echo "Perft supported by engine (detected)."
+        else
+          PERFT_SUPPORTED=0
+          echo "Perft NOT supported by engine (detected) — will skip perft runs and rely on bench."
+          echo "Probe output (tail):"
+          printf "%s\n" "$probe_out" | tail -n 20
+        fi
+        
         run_perft() {
           local fen="$1"
           local depth="$2"
-          printf "uci\nposition fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
+          if [ "$PERFT_SUPPORTED" -eq 1 ]; then
+            printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
+          else
+            echo "Perft not supported by this binary. Skipped." > /tmp/pgo_perft_out.txt
+          fi
         }
         idx=0
         while [ $(date +%s) -lt $END_TS ]; do
