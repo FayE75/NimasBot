@@ -86,32 +86,41 @@ jobs:
         cd Omega/src
         echo "PWD=$(pwd) — starting instrumented build (clang PGO generate)"
     
-        export CC="ccache clang"
-        export CXX="ccache clang++"
-        export CCACHE_DIR="${HOME}/.ccache"
-    
+        if command -v ccache >/dev/null 2>&1; then
+          echo "ccache found — using ccache clang"
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+        else
+          echo "ccache NOT found — using plain clang (avoid 'ccache clang' which would fail)"
+          export CC="clang"
+          export CXX="clang++"
+        fi
+        export CCACHE_DIR="${HOME}/.ccache" || true
+        
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
-    
         INSTR_FLAGS="-fprofile-instr-generate -fcoverage-mapping"
-    
+        
         export CFLAGS="$COMMON_FLAGS $INSTR_FLAGS"
         export CXXFLAGS="$CFLAGS"
         export LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-    
+        
         echo "Instrumented build CFLAGS=$CFLAGS"
         echo "Starting make (COMP=clang, ARCH=x86-64-bmi2), cores=$(nproc)"
-        echo "Starting make (COMP=clang, ARCH=x86-64-bmi2), cores=$(nproc)"
         
+        # Try the recommended 'profile-build' target first; if it fails, FALLBACK to 'build' (explicit target),
+        # do NOT call make without a target (that prints help and exits non-zero).
         if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
-          echo "PROFILE-BUILD succeeded (instrumented)."
+          echo "PROFILE-BUILD (instrumented) succeeded."
         else
-          echo "PROFILE-BUILD failed or unavailable — falling back to generic make"
-          make -j$(nproc) ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log || (
+          echo "PROFILE-BUILD failed — attempting explicit 'build' fallback (no more no-target calls)."
+          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
+            echo "Fallback 'build' succeeded (instrumented step)."
+          else
             echo "===== INSTRUMENTED BUILD FAILED — tail build-instr.log ====="
             tail -n 200 build-instr.log || true
             echo "=============================================================="
             exit 1
-          )
+          fi
         fi
     
         instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
@@ -196,13 +205,15 @@ jobs:
         if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
           echo "Final profile-build succeeded."
         else
-          echo "profile-build failed — attempting generic build"
-          make -j$(nproc) ARCH=x86-64-bmi2 COMP=clang | tee build-final.log || (
+          echo "profile-build (final) failed — attempting explicit 'build' fallback."
+          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+            echo "Final fallback 'build' succeeded."
+          else
             echo "===== FINAL BUILD FAILED — tail build-final.log ====="
             tail -n 200 build-final.log || true
             echo "======================================================"
             exit 1
-          )
+          fi
         fi
     
         found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
