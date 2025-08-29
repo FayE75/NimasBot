@@ -145,8 +145,7 @@ jobs:
         
         START_TS=$(date +%s)
         END_TS=$((START_TS + PGO_RUN_TIME))
-        echo "Perft loop will run until epoch $END_TS (now: $START_TS)."
-        
+        echo "Perft/workload loop will run until epoch $END_TS (now: $START_TS)."
         PERFT_SUPPORTED=0
         probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
         if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
@@ -154,36 +153,49 @@ jobs:
           echo "Perft supported by engine (detected)."
         else
           PERFT_SUPPORTED=0
-          echo "Perft NOT supported by engine (detected) — will skip perft runs and rely on bench."
+          echo "Perft NOT supported by engine (detected) — will use UCI searches (go depth) as fallback."
           echo "Probe output (tail):"
           printf "%s\n" "$probe_out" | tail -n 20
         fi
-        
-        run_perft() {
+        UCI_DEPTHS=(4 5 6)
+        run_workload() {
           local fen="$1"
           local depth="$2"
+        
           if [ "$PERFT_SUPPORTED" -eq 1 ]; then
             printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
           else
-            echo "Perft not supported by this binary. Skipped." > /tmp/pgo_perft_out.txt
+            printf "uci\nposition fen %s\nisready\nreadyok\ngo depth %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
           fi
         }
+        
         idx=0
         while [ $(date +%s) -lt $END_TS ]; do
           for fen in "${FENS[@]}"; do
-            for d in "${PERFT_DEPTHS[@]}"; do
-              now=$(date +%s)
-              if [ $now -ge $END_TS ]; then
-                break 3
-              fi
-              echo "Running perft on position idx=$idx depth=$d (time remaining: $((END_TS-now))s)..."
-              run_perft "$fen" "$d"
-              echo "Perft run completed (last 20 lines):"
-              tail -n 20 /tmp/pgo_perft_out.txt || true
-              idx=$((idx+1))
-            done
+            if [ $(date +%s) -ge $END_TS ]; then break 3; fi
+            if [ "$PERFT_SUPPORTED" -eq 1 ]; then
+              for d in "${PERFT_DEPTHS[@]}"; do
+                now=$(date +%s)
+                if [ $now -ge $END_TS ]; then break 3; fi
+                echo "Running perft on position idx=$idx depth=$d (time remaining: $((END_TS-now))s)..."
+                run_workload "$fen" "$d"
+                echo "Perft run completed (last 20 lines):"
+                tail -n 20 /tmp/pgo_perft_out.txt || true
+                idx=$((idx+1))
+              done
+            else
+              for d in "${UCI_DEPTHS[@]}"; do
+                now=$(date +%s)
+                if [ $now -ge $END_TS ]; then break 3; fi
+                echo "Running UCI search on position idx=$idx depth=$d (time remaining: $((END_TS-now))s)..."
+                run_workload "$fen" "$d"
+                echo "UCI search completed (last 20 lines):"
+                tail -n 20 /tmp/pgo_perft_out.txt || true
+                idx=$((idx+1))
+              done
+            fi
+            sleep 0.05
           done
-          sleep 0.2
         done
     
         echo "Instrumented workload finished. Collected profraw files in $HOME (pattern pgo-*.profraw):"
