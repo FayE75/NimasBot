@@ -168,13 +168,11 @@ opening_books:
     chess960_white:
       selection: best_move
       names:
-        - chess960_1
-        - chess960_2
+        - chess960
     chess960_black:
       selection: best_move
       names:
-        - chess960_1
-        - chess960_2
+        - chess960
     antichess_white:
       selection: best_move
       names:
@@ -451,8 +449,7 @@ books:
   owen_bullet: "./books/owen/owen_blitz_240825_1315.bin"
   owen_blitz: "./books/owen/owen_blitz_240825_1315.bin"
   owen_rapid: "./books/owen/owen_blitz_240825_1315.bin"
-  chess960_1: "./books/book.bin"
-  chess960_2: "./books/c860/c960_250825_1935.bin"
+  chess960: "./books/c860/c960_280825_0508.bin"
   chess960_nimas: "./books/chess960.bin"
   white_1: "./books/std/White_1.bin"
   white_2: "./books/std/White_2.bin"
@@ -471,6 +468,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
