@@ -25,23 +25,35 @@ jobs:
         python-version: '3.12'
         cache: 'pip'
     
-    - name: Install dependencies
+    - name: Install dependencies (clang, llvm-profdata, ccache, etc.)
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install tenacity  # Adding missing dependency
-        
-    - name: Build Omega (clone + full clang PGO workload — single step)
+        sudo apt-get update -qq
+        sudo apt-get install -y build-essential clang git make pkg-config ccache || true
+        if ! command -v llvm-profdata >/dev/null 2>&1; then
+          echo "llvm-profdata not found in default repos — adding apt.llvm.org and installing llvm tools..."
+          # install apt.llvm.org helper then install a recent LLVM (replace 20 with preferred version)
+          wget -qO - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          sudo apt-add-repository "deb http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-20 main" || true
+          sudo apt-get update -qq
+          sudo apt-get install -y llvm-20 llvm-20-tools || sudo apt-get install -y llvm || true
+        fi
+        if command -v llvm-profdata >/dev/null 2>&1; then
+          echo "llvm-profdata available: $(command -v llvm-profdata)"
+        else
+          echo "Warning: llvm-profdata still not found. PGO merge may be skipped (fallback will run)."
+        fi
+        ccache -V || true
+        ccache -M 5G || true
+        ccache -s || true
+
+    - name: Build Omega (single-step clang PGO build — fixed function & safer flow)
       run: |
         set -euo pipefail
         echo "=== START: single-step clone + clang PGO build with bench+perft workload ==="
-  
+
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
-    
         PERFT_DEPTHS=(4 5 6)
-    
         FENS=(
-          # dari kamu (as-is)
           "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
           "r4rk1/1pp1qppp/p1np1n2/4p3/2B1P3/2N2N2/PPP1QPPP/2KR3R w - - 0 1"
           "r3k2r/ppp2ppp/2n2n2/3qp3/3P4/2N1BN2/PPPQ1PPP/R3R1K1 w kq - 0 1"
@@ -51,121 +63,65 @@ jobs:
           "rnbqkbnr/2pp1ppp/p3p3/1p6/3PP3/5N2/PPP2PPP/RNBQKB1R w KQkq - 0 1"
           "2r3k1/5ppp/p3p3/1p6/3P4/2P1P3/PP3PPP/3R2K1 w - - 0 1"
           "8/P7/1K6/8/8/8/8/8 w - - 0 1"
-        
-          # canonical perft positions (chessprogramming)
           "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"   # Kiwipete
           "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
           "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
           "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 1"
         )
-    
+
         ROOT="$(pwd)"
-    
-        echo "Cloning Omega..."
         rm -rf Omega || true
         git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
         if [ ! -d Omega/src ]; then
-          echo "ERROR: Omega/src not found after clone"
-          ls -la Omega || true
-          exit 1
-        fi
-    
-        echo "Installing dependencies (clang, llvm-profdata, ccache, build-essential, etc.)..."
-        sudo apt-get update -qq
-        sudo apt-get install -y build-essential clang llvm llvm-profdata ccache git make pkg-config || true
-    
-        if ! command -v llvm-profdata >/dev/null 2>&1; then
-          echo "Warning: llvm-profdata not found on PATH. PGO merge may fail."
+          echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
         fi
 
-        echo "Configuring ccache..."
-        ccache -M 5G || true
-        which ccache || true
-        ccache -s || true
-    
+        sudo apt-get update -qq
         cd Omega/src
-        echo "PWD=$(pwd) — starting instrumented build (clang PGO generate)"
-    
         if command -v ccache >/dev/null 2>&1; then
-          echo "ccache found — using ccache clang"
           export CC="ccache clang"
           export CXX="ccache clang++"
         else
-          echo "ccache NOT found — using plain clang (avoid 'ccache clang' which would fail)"
           export CC="clang"
           export CXX="clang++"
         fi
-        export CCACHE_DIR="${HOME}/.ccache" || true
-        
+        export CCACHE_DIR="${HOME}/.ccache"
+
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         INSTR_FLAGS="-fprofile-instr-generate -fcoverage-mapping"
-        
         export CFLAGS="$COMMON_FLAGS $INSTR_FLAGS"
         export CXXFLAGS="$CFLAGS"
         export LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-        
-        echo "Instrumented build CFLAGS=$CFLAGS"
-        echo "Starting make (COMP=clang, ARCH=x86-64-bmi2), cores=$(nproc)"
-        
-        # Try the recommended 'profile-build' target first; if it fails, FALLBACK to 'build' (explicit target),
-        # do NOT call make without a target (that prints help and exits non-zero).
         if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
           echo "PROFILE-BUILD (instrumented) succeeded."
         else
-          echo "PROFILE-BUILD failed — attempting explicit 'build' fallback (no more no-target calls)."
-          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
-            echo "Fallback 'build' succeeded (instrumented step)."
-          else
-            echo "===== INSTRUMENTED BUILD FAILED — tail build-instr.log ====="
+          echo "PROFILE-BUILD failed — trying fallback 'build' target"
+          if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
             tail -n 200 build-instr.log || true
-            echo "=============================================================="
-            exit 1
+            echo "INSTRUMENTED BUILD FAILED"; exit 1
           fi
         fi
-    
+
         instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
-        if [ -z "$instr_bin" ]; then
-          echo "ERROR: instrumented binary not found"
-          tail -n 200 build-instr.log || true
-          exit 1
-        fi
-        echo "Instrumented binary: $instr_bin"
-    
-        echo "Running instrumented workload to collect profile data (total ~${PGO_RUN_TIME}s)..."
+        if [ -z "$instr_bin" ]; then echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1; fi
+
         export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
         BENCH_TIME=10
-        echo "Running bench for ${BENCH_TIME}s (if supported by binary)..."
-        if timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1; then
-          echo "Bench finished (output tail):"
-          tail -n 20 /tmp/pgo_bench_instrumented.txt || true
-        else
-          echo "Bench either not supported or timed out; saved to /tmp/pgo_bench_instrumented.txt"
-          tail -n 20 /tmp/pgo_bench_instrumented.txt || true
-        fi
-        
+        timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
+        tail -n 20 /tmp/pgo_bench_instrumented.txt || true
+
         START_TS=$(date +%s)
         END_TS=$((START_TS + PGO_RUN_TIME))
-        echo "Perft/workload loop will run until epoch $END_TS (now: $START_TS)."
         PERFT_SUPPORTED=0
         probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
         if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
           PERFT_SUPPORTED=1
-          echo "Perft supported by engine (detected)."
         else
           PERFT_SUPPORTED=0
-          echo "Perft NOT supported by engine (detected) — will use UCI searches (go depth) as fallback."
-          echo "Probe output (tail):"
-          printf "%s\n" "$probe_out" | tail -n 20
         fi
-        UCI_DEPTHS=(4 5 6)
         run_workload() {
           local fen="$1"
           local depth="$2"
-        
-          run_workload() {
-          local fen="$1"
-          local depth="$2"
-        
           if [ "$PERFT_SUPPORTED" -eq 1 ]; then
             printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
           else
@@ -173,27 +129,27 @@ jobs:
               | sed '/^option name/ d' > /tmp/pgo_perft_out.txt || true
           fi
         }
+
         idx=0
         while [ $(date +%s) -lt $END_TS ]; do
           for fen in "${FENS[@]}"; do
-            if [ $(date +%s) -ge $END_TS ]; then break 3; fi
+            now=$(date +%s)
+            if [ $now -ge $END_TS ]; then break 3; fi
             if [ "$PERFT_SUPPORTED" -eq 1 ]; then
               for d in "${PERFT_DEPTHS[@]}"; do
                 now=$(date +%s)
                 if [ $now -ge $END_TS ]; then break 3; fi
-                echo "Running perft on position idx=$idx depth=$d (time remaining: $((END_TS-now))s)..."
+                echo "Running perft idx=$idx depth=$d..."
                 run_workload "$fen" "$d"
-                echo "Perft run completed (last 20 lines):"
                 tail -n 20 /tmp/pgo_perft_out.txt || true
                 idx=$((idx+1))
               done
             else
-              for d in "${UCI_DEPTHS[@]}"; do
+              for d in 4 5 6; do
                 now=$(date +%s)
                 if [ $now -ge $END_TS ]; then break 3; fi
-                echo "Running UCI search on position idx=$idx depth=$d (time remaining: $((END_TS-now))s)..."
+                echo "Running UCI search idx=$idx depth=$d..."
                 run_workload "$fen" "$d"
-                echo "UCI search completed (last 20 lines):"
                 tail -n 20 /tmp/pgo_perft_out.txt || true
                 idx=$((idx+1))
               done
@@ -201,78 +157,42 @@ jobs:
             sleep 0.05
           done
         done
-    
-        echo "Instrumented workload finished. Collected profraw files in $HOME (pattern pgo-*.profraw):"
-        ls -la ${HOME}/pgo-*.profraw || true
         echo "Merging .profraw files..."
-        profraws=( ${HOME}/pgo-*.profraw )
-        if [ -e "${profraws[0]}" ]; then
+        if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
           if command -v llvm-profdata >/dev/null 2>&1; then
-            llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || (
-              echo "llvm-profdata merge failed (continuing fallback)"
-              ls -la ${HOME}/*.profraw || true
-            )
-            echo "merged.profdata: $(ls -la ${HOME}/merged.profdata || true)"
+            llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || true
           else
-            echo "llvm-profdata not available; cannot merge profraw -> PGO data. Skipping PGO final build."
+            echo "llvm-profdata not available - skipping merge"
           fi
         else
-          echo "No profraw files found — skipping merge (PGO data empty)."
+          echo "No profraw files found"
         fi
-        echo "Preparing final build (using PGO if available)..."
         make clean || true
-    
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
-          echo "Using PGO data for final build"
           export CFLAGS="$COMMON_FLAGS -fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           export CXXFLAGS="$CFLAGS"
           export LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
         else
-          echo "No merged.profdata found -> building optimized non-PGO binary"
           export CFLAGS="$COMMON_FLAGS"
           export CXXFLAGS="$CFLAGS"
           export LDFLAGS="-flto=thin"
         fi
-    
-        echo "Final build CFLAGS=$CFLAGS"
-        
-        if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-          echo "Final profile-build succeeded."
-        else
-          echo "profile-build (final) failed — attempting explicit 'build' fallback."
-          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-            echo "Final fallback 'build' succeeded."
-          else
-            echo "===== FINAL BUILD FAILED — tail build-final.log ====="
+
+        if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+          if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
             tail -n 200 build-final.log || true
-            echo "======================================================"
             exit 1
           fi
         fi
-    
+
         found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
-        echo "find result: '$found'"
-        if [ -z "$found" ]; then
-          echo "ERROR: no final binary found after build"
-          tail -n 200 build-final.log || true
-          exit 1
-        fi
-        if command -v strip >/dev/null 2>&1; then
-          strip "$found" || true
-        fi
+        if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
+        strip "$found" || true
         mkdir -p ../../engines
-        cp "$found" ../../engines/stockfish || true
-        mv -f ../../engines/stockfish ../../engines/sf || true
+        cp "$found" ../../engines/sf || true
         chmod +x ../../engines/sf || true
-        echo "Final PGO binary copied to engines/sf"
-    
-        echo "==== BUILD COMPLETE ===="
-        ls -la ../../engines || true
-        ccache -s || true
-        echo "Profile data artifacts (if any):"
-        ls -la ${HOME}/merged.profdata ${HOME}/pgo-*.profraw || true
-        echo "=== END: single-step clone + clang PGO build ==="
-        exit 0
+        echo "Build complete."
+
         
     - name: Setup engines permissions
       run: |
