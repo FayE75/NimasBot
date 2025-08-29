@@ -215,6 +215,7 @@ jobs:
         echo "Profile data artifacts (if any):"
         ls -la ${HOME}/merged.profdata ${HOME}/pgo-*.profraw || true
         echo "=== END: single-step clone + clang PGO build ==="
+        exit 0
         
     - name: Setup engines permissions
       run: |
