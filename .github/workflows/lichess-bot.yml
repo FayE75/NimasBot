@@ -121,29 +121,19 @@ jobs:
   
         # Common flags (no conflicting -use flags here)
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
-        INSTR_FLAGS="-fprofile-instr-generate -fcoverage-mapping"
-        USE_FLAGS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
-  
-        # Decide: do instrumented generate step or skip if merged.profdata exists
-        # If you want to force generation regardless, set FORCE_INSTRUMENTED=1 in workflow env.
-        if [ -f "${HOME}/merged.profdata" ] && [ "${FORCE_INSTRUMENTED:-0}" != "1" ]; then
-          echo "merged.profdata exists -> skipping generate step, will use PGO data for final build."
-          PERFORM_GENERATE=0
-        else
-          echo "No merged.profdata found (or forced) -> performing instrumented generate build."
-          PERFORM_GENERATE=1
-          # remove old traces if any
-          rm -f ${HOME}/pgo-*.profraw ${HOME}/merged.profdata || true
-        fi
-  
-        # ------------- INSTRUMENTED (generate) BUILD -------------
+        export CFLAGS="$COMMON_FLAGS"
+        export CXXFLAGS="$COMMON_FLAGS"
+        
+        # ---------- Instrumented (generate) build ----------
         if [ "$PERFORM_GENERATE" -eq 1 ]; then
-          export CFLAGS="$COMMON_FLAGS $INSTR_FLAGS"
-          export CXXFLAGS="$CFLAGS"
-          export LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-  
           echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-instr.log; then
+        
+          # Provide clang-style generate flags via EXTRACXXFLAGS/EXTRALDFLAGS (overrides Makefile defaults)
+          INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
+          INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
+        
+          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
             echo "Instrumented build succeeded."
           else
             echo "Instrumented build failed; tail build-instr.log:"
@@ -234,21 +224,27 @@ jobs:
         make clean || true
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
           echo "Using merged.profdata for final build."
-          export CFLAGS="$COMMON_FLAGS $USE_FLAGS"
-          export CXXFLAGS="$CFLAGS"
-          export LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
+        
+          USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
+          USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
+        
+          # pass use flags to make so it doesn't get confused with other generate flags
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
+            # fallback to plain 'build' target if profile-build fails
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
+                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
+              tail -n 200 build-final.log || true
+              exit 1
+            fi
+          fi
         else
           echo "No merged.profdata -> building optimized non-PGO binary."
-          export CFLAGS="$COMMON_FLAGS"
-          export CXXFLAGS="$CFLAGS"
-          export LDFLAGS="-flto=thin"
-        fi
-  
-        echo "Final build CFLAGS=$CFLAGS"
-        if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-          if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-            tail -n 200 build-final.log || true
-            exit 1
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+              tail -n 200 build-final.log || true
+              exit 1
+            fi
           fi
         fi
   
@@ -259,7 +255,6 @@ jobs:
         cp "$found" ../../engines/sf || true
         chmod +x ../../engines/sf || true
         echo "Build complete."
-
         
     - name: Setup engines permissions
       run: |
