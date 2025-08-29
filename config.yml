@@ -1,6 +1,19 @@
 token: "XXXXXXXXXXXXXXXXXXX"         # Lichess OAuth2 Token.
 
 engines:
+  bullet:                               # Engine used for standard chess and when no suitable special engine is configured.
+    dir: "./engines"                      # Directory containing the engine.
+    name: "sf"                     # Binary name of the engine to use.
+    ponder: true                          # Think on opponent's time.
+    silence_stderr: false                 # Suppresses stderr output.
+    move_overhead_multiplier: 5.5         # Optimized for bullet games.
+    uci_options:                          # Arbitrary UCI options passed to the engine.
+      Threads: 8                          # Increased threads for Threadripper power.
+      Hash: 8192                           # Increased hash for better position evaluation.
+      Move Overhead: 255                  # Reduced for faster bullet moves.
+      Minimum Thinking Time: 0
+      Slow Mover: 55
+    limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
     name: "sf"                     # Binary name of the engine to use.
@@ -12,7 +25,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 255                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 45
+      Slow Mover: 100
     limits:   
   chess960:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -25,7 +38,7 @@ engines:
       Hash: 8192                           # Max memory (in megabytes) the engine can allocate.
       Move Overhead: 255                  # Increase if your bot flags games too often.
       Minimum Thinking Time: 0
-      Slow Mover: 45
+      Slow Mover: 55
     limits:
   variants:                               # Engine used for variants when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -470,6 +483,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
