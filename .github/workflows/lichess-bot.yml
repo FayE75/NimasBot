@@ -80,7 +80,7 @@ jobs:
       run: |
         set -euo pipefail
         echo "=== START: single-step clone + clang PGO build with bench+perft workload ==="
-  
+        PERFORM_GENERATE=0
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         PERFT_DEPTHS=(7)
         FENS=(
