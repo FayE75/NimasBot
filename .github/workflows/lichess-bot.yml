@@ -1,23 +1,3 @@
-Skip to content
-Navigation Menu
-FayE75
-NimasBot
-
-Type / to search
-Code
-Pull requests
-Actions
-Projects
-Security
-Insights
-Settings
-Lichess Bot
-Update lichess-bot.yml #162
-Jobs
-Run details
-Workflow file for this run
-.github/workflows/lichess-bot.yml at bb3630c
-
 name: Lichess Bot
 
 on:
