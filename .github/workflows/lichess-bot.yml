@@ -30,63 +30,40 @@ jobs:
         sudo apt-get install -y build-essential clang git make pkg-config ccache || true
         python -m pip install --upgrade pip wheel setuptools
         if [ -f requirements.txt ]; then
-          echo "Installing python requirements from requirements.txt"
           pip install -r requirements.txt
         else
-          echo "No requirements.txt found — installing minimal runtime deps (pyyaml, aiohttp, tenacity, websockets, requests)"
           pip install pyyaml aiohttp tenacity websockets requests
         fi
         if command -v llvm-profdata >/dev/null 2>&1; then
-          echo "llvm-profdata already available: $(command -v llvm-profdata)"
+          true
         else
-          echo "llvm-profdata not found — trying common apt packages (llvm, llvm-18, llvm-19)..."
           sudo apt-get update -qq
           sudo apt-get install -y llvm || true
           sudo apt-get install -y llvm-18 llvm-18-tools || true
           sudo apt-get install -y llvm-19 llvm-19-tools || true
-        
-          if command -v llvm-profdata >/dev/null 2>&1; then
-            echo "Installed llvm-profdata from apt: $(command -v llvm-profdata)"
-          else
-            echo "System apt did not provide llvm-profdata — falling back to download prebuilt LLVM tarball..."
-            LLVM_VER="18.1.6"
-            TARBALL="clang+llvm-${LLVM_VER}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
-            DL_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/${TARBALL}"
-        
-            echo "Attempting download: ${DL_URL}"
-            mkdir -p /tmp/llvmtool
-            if wget -q -O "/tmp/${TARBALL}" "${DL_URL}"; then
-              tar -xf "/tmp/${TARBALL}" -C /tmp/llvmtool
-              EXDIR=$(find /tmp/llvmtool -maxdepth 1 -type d -name "clang+llvm-*" -print -quit || true)
-              if [ -n "$EXDIR" ]; then
-                export PATH="$EXDIR/bin:$PATH"
-                echo "Using downloaded LLVM from $EXDIR"
-                echo "llvm-profdata is now: $(command -v llvm-profdata || echo 'not found')"
-              else
-                echo "Extraction succeeded but could not find extracted directory. Skipping."
-              fi
-            else
-              echo "Download of prebuilt LLVM failed. Skipping fallback download."
+          LLVM_VER="18.1.6"
+          TARBALL="clang+llvm-${LLVM_VER}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
+          DL_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/${TARBALL}"
+          mkdir -p /tmp/llvmtool
+          if wget -q -O "/tmp/${TARBALL}" "${DL_URL}"; then
+            tar -xf "/tmp/${TARBALL}" -C /tmp/llvmtool
+            EXDIR=$(find /tmp/llvmtool -maxdepth 1 -type d -name "clang+llvm-*" -print -quit || true)
+            if [ -n "$EXDIR" ]; then
+              export PATH="$EXDIR/bin:$PATH"
             fi
           fi
-        fi
-        if command -v llvm-profdata >/dev/null 2>&1; then
-          echo "✅ llvm-profdata available at: $(command -v llvm-profdata)"
-        else
-          echo "⚠️ llvm-profdata NOT found. PGO merge will be skipped and build will proceed without PGO."
         fi
         if command -v ccache >/dev/null 2>&1; then
           ccache -V || true
           ccache -M 5G || true
           ccache -s || true
         else
-          echo "ccache not found (unexpected) — builds will be uncached."
+          true
         fi
         
     - name: Build Omega (single-step clang PGO build — safe PGO flow)
       run: |
         set -euo pipefail
-        echo "=== START: single-step clone + clang PGO build with bench+perft workload ==="
         PERFORM_GENERATE=0
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         PERFT_DEPTHS=(6 8)
@@ -125,13 +102,12 @@ jobs:
         rm -rf Omega || true
         git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
         if [ ! -d Omega/src ]; then
-          echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
+          exit 1
         fi
   
         sudo apt-get update -qq
         cd Omega/src
   
-        # Use ccache if available
         if command -v ccache >/dev/null 2>&1; then
           export CC="ccache clang"
           export CXX="ccache clang++"
@@ -141,39 +117,27 @@ jobs:
         fi
         export CCACHE_DIR="${HOME}/.ccache"
   
-        # Common flags (no conflicting -use flags here)
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
         
-        # ---------- Instrumented (generate) build ----------
         if [ "$PERFORM_GENERATE" -eq 1 ]; then
-          echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
-        
-          # Provide clang-style generate flags via EXTRACXXFLAGS/EXTRALDFLAGS (overrides Makefile defaults)
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-        
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
-            echo "Instrumented build succeeded."
-          else
-            echo "Instrumented build failed; tail build-instr.log:"
-            tail -n 200 build-instr.log || true
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}"; then
             exit 1
           fi
   
           instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
           if [ -z "$instr_bin" ]; then
-            echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1
+            exit 1
           fi
   
           export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
           BENCH_TIME=10
           timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
-          tail -n 20 /tmp/pgo_bench_instrumented.txt || true
   
-          # workload loop (perft/uci)
           START_TS=$(date +%s)
           END_TS=$((START_TS + PGO_RUN_TIME))
           PERFT_SUPPORTED=0
@@ -190,7 +154,6 @@ jobs:
             if [ "$PERFT_SUPPORTED" -eq 1 ]; then
               printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
             else
-              # Ensure threads+hash set per-run (safer)
               THREADS="$(nproc 2>/dev/null || echo 1)"
               HASH_MB=256
               printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth %d\nquit\n" \
@@ -207,18 +170,14 @@ jobs:
                 for d in "${PERFT_DEPTHS[@]}"; do
                   now=$(date +%s)
                   if [ $now -ge $END_TS ]; then break 3; fi
-                  echo "Running perft idx=$idx depth=$d..."
                   run_workload "$fen" "$d"
-                  tail -n 20 /tmp/pgo_perft_out.txt || true
                   idx=$((idx+1))
                 done
               else
                 for d in 4 5 6; do
                   now=$(date +%s)
                   if [ $now -ge $END_TS ]; then break 3; fi
-                  echo "Running UCI search idx=$idx depth=$d..."
                   run_workload "$fen" "$d"
-                  tail -n 20 /tmp/pgo_perft_out.txt || true
                   idx=$((idx+1))
                 done
               fi
@@ -226,80 +185,55 @@ jobs:
             done
           done
   
-          # Merge profraw -> merged.profdata if possible
-          echo "Merging .profraw files..."
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
             if command -v llvm-profdata >/dev/null 2>&1; then
-              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || {
-                echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true
-              }
-              echo "merged.profdata: $(ls -la ${HOME}/merged.profdata || true)"
-            else
-              echo "llvm-profdata not available - skipping merge"
+              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || true
             fi
-          else
-            echo "No profraw files found"
           fi
         fi
   
-        # ------------- FINAL BUILD (use merged.profdata if present) -------------
         make clean || true
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
-          echo "Using merged.profdata for final build."
-        
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
-        
-          # pass use flags to make so it doesn't get confused with other generate flags
           if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-            # fallback to plain 'build' target if profile-build fails
+               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}"; then
             if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
-                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-              tail -n 200 build-final.log || true
+                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}"; then
               exit 1
             fi
           fi
         else
-          echo "No merged.profdata -> building optimized non-PGO binary."
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-              tail -n 200 build-final.log || true
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
               exit 1
             fi
           fi
         fi
   
         found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
-        if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
+        if [ -z "$found" ]; then exit 1; fi
         strip "$found" || true
         mkdir -p ../../engines
         cp "$found" ../../engines/sf || true
         chmod +x ../../engines/sf || true
-        echo "Build complete."
-
-
+  
     - name: Build Fairy-Stockfish (clone + clang PGO build — bench/testpos workload)
       run: |
         set -euo pipefail
-        echo "=== START: clone + build Fairy-Stockfish (with optional PGO using bench/testpos) ==="
-    
-        # Toggle: set to 1 untuk menjalankan instrumented generate stage (PGO collection)
         PERFORM_GENERATE=${PERFORM_GENERATE:-0}
-        # total seconds to run PGO workload (override via env)
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
-    
+  
         ROOT="$(pwd)"
         rm -rf Fairy-Stockfish || true
-        git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { echo "Clone failed"; exit 1; }
+        git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { exit 1; }
         if [ ! -d Fairy-Stockfish/src ]; then
-          echo "ERROR: Fairy-Stockfish/src not found after clone"; ls -la Fairy-Stockfish || true; exit 1
+          exit 1
         fi
-    
+  
         sudo apt-get update -qq || true
         cd Fairy-Stockfish/src
-    
-        # Use ccache if available
+  
         if command -v ccache >/dev/null 2>&1; then
           export CC="ccache clang"
           export CXX="ccache clang++"
@@ -308,74 +242,57 @@ jobs:
           export CXX="clang++"
         fi
         export CCACHE_DIR="${HOME}/.ccache"
-    
-        # Common optimization flags (match Omega)
+  
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
-    
-        # --- try to extract FEN/testpos from repo (if any) ---
+  
         FEN_CANDIDATES="/tmp/fairy_fens.txt"
         : > "$FEN_CANDIDATES" || true
-    
-        # Best-effort grep for FEN-like lines across the repo (adjust regex if needed)
-        # Match lines like: rnbqkbnr/... w (or b) ... 0 1
+  
         grep -RInhoP '^[rnbqkpRNBQKP1-8/]{8,}\s+[wb]\s+[^ ]+\s+[^ ]+\s+\d+\s+\d+' .. 2>/dev/null \
           | sed -E 's/^[^:]+://g' | sort -u > "$FEN_CANDIDATES" || true
-    
-        # Looser fallback: any 8/7/... pattern with w/b
+  
         if [ ! -s "$FEN_CANDIDATES" ]; then
           grep -RInhoP '([rnbqkpRNBQKP1-8/]{8,}/[rnbqkpRNBQKP1-8/]{7,})\s+[wb]' .. 2>/dev/null \
             | sed -E 's/^[^:]+://;s/\r$//' | sort -u > "$FEN_CANDIDATES" || true
         fi
-    
+  
         if [ -s "$FEN_CANDIDATES" ]; then
-          echo "Found candidate FENs in repo -> $FEN_CANDIDATES"
-          # load into bash array
           mapfile -t FENS < "$FEN_CANDIDATES"
         else
-          echo "No repo FENs/testpos found; will prefer built-in bench or startpos-search fallback"
           FENS=()
         fi
-    
-        # ---------- Instrumented (generate) build ----------
+  
         if [ "$PERFORM_GENERATE" -eq 1 ]; then
-          echo "Running instrumented (generate) build for Fairy-Stockfish — CXXFLAGS=$CXXFLAGS"
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-    
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
-            echo "Instrumented Fairy build succeeded."
-          else
-            echo "Instrumented Fairy build failed; tail build-instr.log:"
-            tail -n 200 build-instr.log || true
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}"; then
             exit 1
           fi
-    
+  
           instr_bin=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
           if [ -z "$instr_bin" ]; then
-            echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1
+            exit 1
           fi
-    
+  
           export LLVM_PROFILE_FILE="${HOME}/pgo-fairy-%p.profraw"
           START_TS=$(date +%s)
           END_TS=$((START_TS + PGO_RUN_TIME))
-    
-          # Detect builtin bench support
+  
           BENCH_SUPPORTED=0
           probe_out=$("${instr_bin}" bench 2>&1 || true)
           if ! printf "%s" "$probe_out" | grep -qi "Unknown command\|unknown command\|usage"; then
             BENCH_SUPPORTED=1
           fi
-    
-          # Detect perft support (best-effort)
+  
           PERFT_SUPPORTED=0
           probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
           if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
             PERFT_SUPPORTED=1
           fi
-    
+  
           run_workload_from_fens() {
             local fen
             local idx=0
@@ -389,33 +306,26 @@ jobs:
                 printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth 6\nquit\n" \
                   "$THREADS" "$HASH_MB" "$fen" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_perft_out.txt || true
               fi
-              tail -n 12 /tmp/pgo_fairy_perft_out.txt || true
               idx=$((idx+1))
               sleep 0.05
               now=$(date +%s); if [ $now -ge $END_TS ]; then break; fi
             done
           }
-    
+  
           run_workload_bench() {
-            echo "Running builtin bench on Fairy-Stockfish instrumented binary..."
             timeout 30 "${instr_bin}" bench > /tmp/pgo_fairy_bench_instrumented.txt 2>&1 || true
-            tail -n 20 /tmp/pgo_fairy_bench_instrumented.txt || true
           }
-    
+  
           run_workload_startpos() {
-            echo "Fallback: repeated UCI search on startpos for PGO coverage"
             THREADS="$(nproc 2>/dev/null || echo 1)"
             HASH_MB=256
             while [ $(date +%s) -lt $END_TS ]; do
               printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\n" "$THREADS" "$HASH_MB" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_startpos_out.txt || true
-              tail -n 10 /tmp/pgo_fairy_startpos_out.txt || true
               sleep 0.05
             done
           }
-    
-          # main workload loop
+  
           if [ "${#FENS[@]}" -gt 0 ]; then
-            echo "Using repo testpos/FENs for PGO workload (count=${#FENS[@]})"
             while [ $(date +%s) -lt $END_TS ]; do
               run_workload_from_fens
             done
@@ -429,72 +339,48 @@ jobs:
               run_workload_startpos
             fi
           fi
-    
-          # Merge profraw -> merged-fairy.profdata if possible
-          echo "Merging .profraw files for Fairy..."
+  
           if compgen -G "${HOME}/pgo-fairy-*.profraw" >/dev/null 2>&1; then
             if command -v llvm-profdata >/dev/null 2>&1; then
-              llvm-profdata merge -o "${HOME}/merged-fairy.profdata" ${HOME}/pgo-fairy-*.profraw || {
-                echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true
-              }
-              echo "merged-fairy.profdata: $(ls -la ${HOME}/merged-fairy.profdata || true)"
-            else
-              echo "llvm-profdata not available - skipping merge"
+              llvm-profdata merge -o "${HOME}/merged-fairy.profdata" ${HOME}/pgo-fairy-*.profraw || true
             fi
-          else
-            echo "No fairy profraw files found"
           fi
         fi
-        # ---------- end instrumented section ----------
-    
-        # ------------- FINAL BUILD (use merged-fairy.profdata if present) -------------
+  
         make clean || true
         if [ -f "${HOME}/merged-fairy.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
-          echo "Using merged-fairy.profdata for final Fairy build."
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -flto=thin"
           if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-fairy-final.log; then
-            # fallback to plain build
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy-final.log; then
-              tail -n 200 build-fairy-final.log || true
+               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}"; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
               exit 1
             fi
           fi
         else
-          echo "No merged-fairy.profdata -> building optimized non-PGO Fairy binary."
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy-final.log; then
-              tail -n 200 build-fairy-final.log || true
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
               exit 1
             fi
           fi
         fi
-    
+  
         found=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
         if [ -z "$found" ]; then
-          echo "No engine binary found via standard patterns, searching any executable..."
           found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
         fi
         if [ -z "$found" ]; then
-          tail -n 200 build-fairy-final.log || true
-          echo "ERROR: built binary not found"
           exit 1
         fi
-        echo "Found engine binary: $found"
         strip "$found" || true
         mkdir -p "${ROOT}/engines"
-        cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; exit 1; }
+        cp "$found" "${ROOT}/engines/fsf" || { exit 1; }
         chmod +x "${ROOT}/engines/fsf"
-        echo "Fairy build & copy complete: engines/fsf"
 
     - name: Setup engines permissions
       run: |
-        echo "🔧 Setting engine permissions..."
         chmod +x engines/sf || true
         chmod +x engines/fsf || true
-        # Verify engines
-        echo "📋 Listing engines:"
         ls -la engines/ || true
       
     - name: Setup token
@@ -519,5 +405,4 @@ jobs:
     - name: Launch bot
       timeout-minutes: 340
       run: |
-        echo "🤖 Starting bot..."
         python3 user_interface.py matchmaking
