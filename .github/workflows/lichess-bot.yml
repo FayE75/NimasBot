@@ -263,6 +263,71 @@ jobs:
         cp "$found" ../../engines/sf || true
         chmod +x ../../engines/sf || true
         echo "Build complete."
+
+    - name: Build Fairy-Stockfish (clone + make, no FEN/perft)
+      run: |
+        set -euo pipefail
+        echo "=== START: clone + build Fairy-Stockfish (no FEN/perft) ==="
+        ROOT="$(pwd)"
+        rm -rf Fairy-Stockfish || true
+        git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { echo "Clone failed"; exit 1; }
+        if [ ! -d Fairy-Stockfish/src ]; then
+          echo "ERROR: Fairy-Stockfish/src not found after clone"; ls -la Fairy-Stockfish || true; exit 1
+        fi
+        cd Fairy-Stockfish/src
+
+        # Use ccache if available
+        if command -v ccache >/dev/null 2>&1; then
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+        else
+          export CC="clang"
+          export CXX="clang++"
+        fi
+        export CCACHE_DIR="${HOME}/.ccache"
+
+        # Common optimization flags (match Omega)
+        COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
+        export CFLAGS="$COMMON_FLAGS"
+        export CXXFLAGS="$COMMON_FLAGS"
+
+        # Final build: try profile-build then fallback to build
+        make clean || true
+        if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy.log; then
+          if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy.log; then
+            tail -n 200 build-fairy.log || true
+            exit 1
+          fi
+        fi
+
+        # find built binary (try common patterns)
+        found=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
+        if [ -z "$found" ]; then
+          echo "No engine binary found via name patterns, searching any executable..."
+          found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
+        fi
+        if [ -z "$found" ]; then
+          tail -n 200 build-fairy.log || true
+          echo "ERROR: built binary not found"
+          exit 1
+        fi
+        echo "Found engine binary: $found"
+        strip "$found" || true
+        mkdir -p "${ROOT}/engines"
+        cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; exit 1; }
+        chmod +x "${ROOT}/engines/fsf"
+        echo "Fairy build & copy complete: engines/fsf"
+
+    - name: Setup engines permissions
+      run: |
+        echo "🔧 Setting engine permissions..."
+        chmod +x engines/fsf || true
+        chmod +x engines/fairy-stockfish_x86-64-bmi2 || true || true
+        chmod +x engines/ShashChess39 || true || true
+
+        # Verify engines
+        echo "📋 Listing engines:"
+        ls -la engines/ || true
         
     - name: Setup engines permissions
       run: |
