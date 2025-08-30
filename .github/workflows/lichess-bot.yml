@@ -83,22 +83,39 @@ jobs:
           echo "ccache not found (unexpected) — builds will be uncached."
         fi
         
-    - name: Build Omega (single-step clang PGO build — bench/testpos workload)
+    - name: Build Omega (single-step clang PGO build — safe PGO flow)
       run: |
         set -euo pipefail
-        echo "=== START: single-step clone + clang PGO build with bench/testpos workload ==="
+        echo "=== START: single-step clone + clang PGO build with bench+perft workload ==="
         PERFORM_GENERATE=0
-        PGO_RUN_TIME=${PGO_RUN_TIME:-120}   # seconds of workload to run when instrumented
+        PGO_RUN_TIME=${PGO_RUN_TIME:-120}
+        PERFT_DEPTHS=(7)
+        FENS=(
+          "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+          "r4rk1/1pp1qppp/p1np1n2/4p3/2B1P3/2N2N2/PPP1QPPP/2KR3R w - - 0 1"
+          "r3k2r/ppp2ppp/2n2n2/3qp3/3P4/2N1BN2/PPPQ1PPP/R3R1K1 w kq - 0 1"
+          "8/8/8/8/8/2k5/5R2/2K5 w - - 0 1"
+          "r1bq1rk1/pp3ppp/2n1pn2/2bp4/2B1P3/2NP1N2/PP3PPP/R1BQ1RK1 w - - 0 1"
+          "8/2p5/3p4/1p3k2/3K4/8/8/8 w - - 0 1"
+          "rnbqkbnr/2pp1ppp/p3p3/1p6/3PP3/5N2/PPP2PPP/RNBQKB1R w KQkq - 0 1"
+          "2r3k1/5ppp/p3p3/1p6/3P4/2P1P3/PP3PPP/3R2K1 w - - 0 1"
+          "8/P7/1K6/8/8/8/8/8 w - - 0 1"
+          "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+          "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
+          "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
+          "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 1"
+        )
+  
         ROOT="$(pwd)"
         rm -rf Omega || true
         git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
         if [ ! -d Omega/src ]; then
           echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
         fi
-      
+  
         sudo apt-get update -qq
         cd Omega/src
-      
+  
         # Use ccache if available
         if command -v ccache >/dev/null 2>&1; then
           export CC="ccache clang"
@@ -108,18 +125,20 @@ jobs:
           export CXX="clang++"
         fi
         export CCACHE_DIR="${HOME}/.ccache"
-      
-        # Common flags
+  
+        # Common flags (no conflicting -use flags here)
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
-      
+        
         # ---------- Instrumented (generate) build ----------
         if [ "$PERFORM_GENERATE" -eq 1 ]; then
           echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
+        
+          # Provide clang-style generate flags via EXTRACXXFLAGS/EXTRALDFLAGS (overrides Makefile defaults)
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-      
+        
           if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
                EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
             echo "Instrumented build succeeded."
@@ -128,55 +147,70 @@ jobs:
             tail -n 200 build-instr.log || true
             exit 1
           fi
-      
+  
           instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
           if [ -z "$instr_bin" ]; then
             echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1
           fi
-      
+  
           export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
+          BENCH_TIME=10
+          timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
+          tail -n 20 /tmp/pgo_bench_instrumented.txt || true
+  
+          # workload loop (perft/uci)
           START_TS=$(date +%s)
           END_TS=$((START_TS + PGO_RUN_TIME))
-      
-          # Check if engine supports bench/testpos
-          BENCH_SUPPORTED=0
-          probe_out=$("${instr_bin}" bench 2>&1 || true)
-          if printf "%s" "$probe_out" | grep -qi "Unknown command\|unknown command\|usage"; then
-            BENCH_SUPPORTED=0
+          PERFT_SUPPORTED=0
+          probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
+          if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
+            PERFT_SUPPORTED=1
           else
-            BENCH_SUPPORTED=1
+            PERFT_SUPPORTED=0
           fi
-      
-          run_workload_bench() {
-            echo "Running builtin bench on instrumented binary..."
-            # try a normal bench, keep it short per iteration
-            timeout 30 "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
-            tail -n 20 /tmp/pgo_bench_instrumented.txt || true
+  
+          run_workload() {
+            local fen="$1"
+            local depth="$2"
+            if [ "$PERFT_SUPPORTED" -eq 1 ]; then
+              printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
+            else
+              # Ensure threads+hash set per-run (safer)
+              THREADS="$(nproc 2>/dev/null || echo 1)"
+              HASH_MB=256
+              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth %d\nquit\n" \
+                "$THREADS" "$HASH_MB" "$fen" "$depth" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_perft_out.txt || true
+            fi
           }
-      
-          run_workload_startpos() {
-            echo "Engine has no 'bench' — fallback to repeated UCI search on startpos"
-            THREADS="$(nproc 2>/dev/null || echo 1)"
-            HASH_MB=256
-            # run short searches repeatedly until time's up
-            printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\n" "$THREADS" "$HASH_MB" | "${instr_bin}" >/dev/null 2>&1 || true
-            while [ $(date +%s) -lt $END_TS ]; do
-              # depth 6/7 short searches on startpos - avoids manual FEN
-              printf "position startpos\ngo depth 6\n" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_startpos_out.txt || true
-              tail -n 10 /tmp/pgo_startpos_out.txt || true
-            done
-          }
-      
-          if [ "$BENCH_SUPPORTED" -eq 1 ]; then
-            # run bench/testpos repeatedly until runtime expires
-            while [ $(date +%s) -lt $END_TS ]; do
-              run_workload_bench
+  
+          idx=0
+          while [ $(date +%s) -lt $END_TS ]; do
+            for fen in "${FENS[@]}"; do
+              now=$(date +%s)
+              if [ $now -ge $END_TS ]; then break 3; fi
+              if [ "$PERFT_SUPPORTED" -eq 1 ]; then
+                for d in "${PERFT_DEPTHS[@]}"; do
+                  now=$(date +%s)
+                  if [ $now -ge $END_TS ]; then break 3; fi
+                  echo "Running perft idx=$idx depth=$d..."
+                  run_workload "$fen" "$d"
+                  tail -n 20 /tmp/pgo_perft_out.txt || true
+                  idx=$((idx+1))
+                done
+              else
+                for d in 4 5 6; do
+                  now=$(date +%s)
+                  if [ $now -ge $END_TS ]; then break 3; fi
+                  echo "Running UCI search idx=$idx depth=$d..."
+                  run_workload "$fen" "$d"
+                  tail -n 20 /tmp/pgo_perft_out.txt || true
+                  idx=$((idx+1))
+                done
+              fi
               sleep 0.05
             done
-          else
-            run_workload_startpos
-          fi
-      
+          done
+  
           # Merge profraw -> merged.profdata if possible
           echo "Merging .profraw files..."
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
@@ -192,15 +226,19 @@ jobs:
             echo "No profraw files found"
           fi
         fi
-      
+  
         # ------------- FINAL BUILD (use merged.profdata if present) -------------
         make clean || true
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
           echo "Using merged.profdata for final build."
+        
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
+        
+          # pass use flags to make so it doesn't get confused with other generate flags
           if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
                EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
+            # fallback to plain 'build' target if profile-build fails
             if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
                  EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
               tail -n 200 build-final.log || true
@@ -216,7 +254,7 @@ jobs:
             fi
           fi
         fi
-      
+  
         found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
         if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
         strip "$found" || true
