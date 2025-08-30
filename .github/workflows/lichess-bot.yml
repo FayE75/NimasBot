@@ -91,12 +91,12 @@ jobs:
         PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
+        set -x
         echo "=== START: clone + build Omega (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         ROOT="$(pwd)"
         rm -rf Omega || true
-        git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega || \
-          git clone https://github.com/FayE75/Omega.git Omega || { echo "Clone failed"; exit 1; }
+        git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega || git clone https://github.com/FayE75/Omega.git Omega || { echo "Clone failed"; exit 1; }
         if [ ! -d Omega/src ]; then
           echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
         fi
@@ -117,12 +117,9 @@ jobs:
 
         if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
           echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
-
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
+          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
             echo "Instrumented build succeeded."
           else
             echo "Instrumented build failed; tail build-instr.log:"
@@ -156,8 +153,7 @@ jobs:
               echo "bench failed / timed out — fallback to UCI single-run to produce profraw"
               THREADS="$(nproc 2>/dev/null || echo 1)"
               HASH_MB=256
-              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" \
-                "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented.txt 2>&1 || true
+              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented.txt 2>&1 || true
             fi
 
             now=$(date +%s)
@@ -173,9 +169,7 @@ jobs:
           echo "Merging .profraw files..."
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
             if command -v llvm-profdata >/dev/null 2>&1; then
-              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || {
-                echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true
-              }
+              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || { echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true; }
               echo "merged.profdata: $(ls -la ${HOME}/merged.profdata || true)"
             else
               echo "llvm-profdata not available - skipping merge"
@@ -186,42 +180,38 @@ jobs:
         fi
 
         make clean || true
+
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
           echo "Using merged.profdata for final build."
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
-                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-              tail -n 200 build-final.log || true
-              exit 1
-            fi
-          fi
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log || { tail -n 300 build-final.log || true; exit 1; }
         else
           echo "No merged.profdata -> building optimized non-PGO binary."
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-              tail -n 200 build-final.log || true
-              exit 1
-            fi
-          fi
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log || { echo "profile-build failed; trying non-profile build"; tail -n 300 build-final.log || true; make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }; }
         fi
 
         found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -o -iname 'omega*' -o -iname 'sf*' -print -quit || true)
-        if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
+        if [ -z "$found" ]; then
+          echo "No engine binary found after build; showing last 400 lines of build-final.log"; tail -n 400 build-final.log || true
+          exit 1
+        fi
         echo "Found engine binary: $found"
         strip "$found" || true
         mkdir -p "${ROOT}/engines"
-        cp "$found" "${ROOT}/engines/sf" || true
+        cp "$found" "${ROOT}/engines/sf" || { echo "Copy failed"; ls -la . || true; exit 1; }
         chmod +x "${ROOT}/engines/sf" || true
         echo "Omega build complete."
+
+        make ARCH=x86-64-bmi2 COMP=clang profileclean || { rc=$?; echo "profileclean exited with code $rc (non-fatal)."; }
+        echo "profileclean exit status shown above."
 
     - name: Build Fairy-Stockfish (clone + make — optional instrumented PGO using engine bench)
       env:
         PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
+        set -x
         echo "=== START: clone + build Fairy-Stockfish (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         ROOT="$(pwd)"
@@ -247,12 +237,9 @@ jobs:
 
         if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
           echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
-
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
+          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
             echo "Instrumented build succeeded."
           else
             echo "Instrumented build failed; tail build-instr.log:"
@@ -286,8 +273,7 @@ jobs:
               echo "bench failed / timed out — fallback to UCI single-run to produce profraw"
               THREADS="$(nproc 2>/dev/null || echo 1)"
               HASH_MB=256
-              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" \
-                "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented_fairy.txt 2>&1 || true
+              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented_fairy.txt 2>&1 || true
             fi
 
             now=$(date +%s)
@@ -303,9 +289,7 @@ jobs:
           echo "Merging .profraw files..."
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
             if command -v llvm-profdata >/dev/null 2>&1; then
-              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || {
-                echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true
-              }
+              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || { echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true; }
               echo "merged.profdata: $(ls -la ${HOME}/merged.profdata || true)"
             else
               echo "llvm-profdata not available - skipping merge"
@@ -316,37 +300,35 @@ jobs:
         fi
 
         make clean || true
+
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
           echo "Using merged.profdata for final build."
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
-                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-              tail -n 200 build-final.log || true
-              exit 1
-            fi
-          fi
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log || { tail -n 300 build-final.log || true; exit 1; }
         else
           echo "No merged.profdata -> building optimized non-PGO binary."
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
-              tail -n 200 build-final.log || true
-              exit 1
-            fi
-          fi
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log || { echo "profile-build failed; trying non-profile build"; tail -n 300 build-final.log || true; make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }; }
         fi
 
         found=$(find . -maxdepth 6 -type f -executable -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
-        if [ -z "$found" ]; then found=$(find . -maxdepth 6 -type f -executable -print -quit || true); fi
-        if [ -z "$found" ]; then tail -n 200 build-final.log || true; echo "ERROR: built binary not found"; exit 1; fi
+        if [ -z "$found" ]; then
+          found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
+        fi
+        if [ -z "$found" ]; then
+          tail -n 200 build-final.log || true
+          echo "ERROR: built binary not found"
+          exit 1
+        fi
         echo "Found engine binary: $found"
         strip "$found" || true
         mkdir -p "${ROOT}/engines"
         cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; exit 1; }
         chmod +x "${ROOT}/engines/fsf"
         echo "Fairy build complete."
+
+        make ARCH=x86-64-bmi2 COMP=clang profileclean || { rc=$?; echo "profileclean exited with code $rc (non-fatal)."; }
+        echo "profileclean exit status shown above."
 
     - name: Setup engines permissions
       run: |
