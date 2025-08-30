@@ -12,7 +12,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 60
+      Slow Mover: 65
     limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -25,7 +25,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 60
+      Slow Mover: 65
     limits:
   chess960:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -38,7 +38,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 55
+      Slow Mover: 65
     limits:
   variants:                               # Engine used for variants when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -484,6 +484,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
