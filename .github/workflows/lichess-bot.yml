@@ -1,4 +1,3 @@
-
 name: Lichess Bot
 
 on:
@@ -18,13 +17,13 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v5
-      
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
         cache: 'pip'
-    
+
     - name: Install dependencies (clang, llvm-profdata, ccache, etc.)
       run: |
         sudo apt-get update -qq
@@ -37,6 +36,7 @@ jobs:
           echo "No requirements.txt found — installing minimal runtime deps (pyyaml, aiohttp, tenacity, websockets, requests)"
           pip install pyyaml aiohttp tenacity websockets requests
         fi
+
         if command -v llvm-profdata >/dev/null 2>&1; then
           echo "llvm-profdata already available: $(command -v llvm-profdata)"
         else
@@ -45,7 +45,7 @@ jobs:
           sudo apt-get install -y llvm || true
           sudo apt-get install -y llvm-18 llvm-18-tools || true
           sudo apt-get install -y llvm-19 llvm-19-tools || true
-        
+
           if command -v llvm-profdata >/dev/null 2>&1; then
             echo "Installed llvm-profdata from apt: $(command -v llvm-profdata)"
           else
@@ -53,7 +53,7 @@ jobs:
             LLVM_VER="18.1.6"
             TARBALL="clang+llvm-${LLVM_VER}-x86_64-linux-gnu-ubuntu-22.04.tar.xz"
             DL_URL="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}/${TARBALL}"
-        
+
             echo "Attempting download: ${DL_URL}"
             mkdir -p /tmp/llvmtool
             if wget -q -O "/tmp/${TARBALL}" "${DL_URL}"; then
@@ -71,11 +71,13 @@ jobs:
             fi
           fi
         fi
+
         if command -v llvm-profdata >/dev/null 2>&1; then
           echo "✅ llvm-profdata available at: $(command -v llvm-profdata)"
         else
           echo "⚠️ llvm-profdata NOT found. PGO merge will be skipped and build will proceed without PGO."
         fi
+
         if command -v ccache >/dev/null 2>&1; then
           ccache -V || true
           ccache -M 5G || true
@@ -84,40 +86,22 @@ jobs:
           echo "ccache not found (unexpected) — builds will be uncached."
         fi
 
-    - name: Build Omega (single-step clang PGO build — safe PGO flow)
+    - name: Build Omega (clone + make — optional instrumented PGO using engine bench)
+      env:
+        PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
-        echo "=== START: single-step clone + clang PGO build with bench+perft workload ==="
-        PERFORM_GENERATE=0
+        echo "=== START: clone + build Omega (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
-        PERFT_DEPTHS=(7)
-        FENS=(
-          "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-          "r4rk1/1pp1qppp/p1np1n2/4p3/2B1P3/2N2N2/PPP1QPPP/2KR3R w - - 0 1"
-          "r3k2r/ppp2ppp/2n2n2/3qp3/3P4/2N1BN2/PPPQ1PPP/R3R1K1 w kq - 0 1"
-          "8/8/8/8/8/2k5/5R2/2K5 w - - 0 1"
-          "r1bq1rk1/pp3ppp/2n1pn2/2bp4/2B1P3/2NP1N2/PP3PPP/R1BQ1RK1 w - - 0 1"
-          "8/2p5/3p4/1p3k2/3K4/8/8/8 w - - 0 1"
-          "rnbqkbnr/2pp1ppp/p3p3/1p6/3PP3/5N2/PPP2PPP/RNBQKB1R w KQkq - 0 1"
-          "2r3k1/5ppp/p3p3/1p6/3P4/2P1P3/PP3PPP/3R2K1 w - - 0 1"
-          "8/P7/1K6/8/8/8/8/8 w - - 0 1"
-          "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
-          "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"
-          "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1"
-          "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 1"
-        )
-  
         ROOT="$(pwd)"
         rm -rf Omega || true
-        git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
+        git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega || \
+          git clone https://github.com/FayE75/Omega.git Omega || { echo "Clone failed"; exit 1; }
         if [ ! -d Omega/src ]; then
           echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
         fi
-  
-        sudo apt-get update -qq
         cd Omega/src
-  
-        # Use ccache if available
+
         if command -v ccache >/dev/null 2>&1; then
           export CC="ccache clang"
           export CXX="ccache clang++"
@@ -126,20 +110,17 @@ jobs:
           export CXX="clang++"
         fi
         export CCACHE_DIR="${HOME}/.ccache"
-  
-        # Common flags (no conflicting -use flags here)
+
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
-        
-        # ---------- Instrumented (generate) build ----------
-        if [ "$PERFORM_GENERATE" -eq 1 ]; then
+
+        if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
           echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
-        
-          # Provide clang-style generate flags via EXTRACXXFLAGS/EXTRALDFLAGS (overrides Makefile defaults)
+
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-        
+
           if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
                EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
             echo "Instrumented build succeeded."
@@ -148,71 +129,47 @@ jobs:
             tail -n 200 build-instr.log || true
             exit 1
           fi
-  
-          instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
+
+          instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'omega*' -o -iname 'stockfish*' -print -quit || true)
+          if [ -z "$instr_bin" ]; then
+            instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'sf*' -print -quit || true)
+          fi
           if [ -z "$instr_bin" ]; then
             echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1
           fi
-  
+
           export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
-          BENCH_TIME=10
+
+          BENCH_TIME=12
           timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
           tail -n 20 /tmp/pgo_bench_instrumented.txt || true
-  
-          # workload loop (perft/uci)
+
           START_TS=$(date +%s)
           END_TS=$((START_TS + PGO_RUN_TIME))
-          PERFT_SUPPORTED=0
-          probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
-          if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
-            PERFT_SUPPORTED=1
-          else
-            PERFT_SUPPORTED=0
-          fi
-  
-          run_workload() {
-            local fen="$1"
-            local depth="$2"
-            if [ "$PERFT_SUPPORTED" -eq 1 ]; then
-              printf "position fen %s\nperft %d\nquit\n" "$fen" "$depth" | "${instr_bin}" > /tmp/pgo_perft_out.txt 2>&1 || true
+          echo "Instrumented workload window: ${PGO_RUN_TIME}s"
+
+          while [ $(date +%s) -lt $END_TS ]; do
+            echo "Running built-in bench iteration at $(date +%T)..."
+            if timeout 120s "${instr_bin}" bench >> /tmp/pgo_bench_instrumented.txt 2>&1; then
+              echo "bench iteration finished."
             else
-              # Ensure threads+hash set per-run (safer)
+              echo "bench failed / timed out — fallback to UCI single-run to produce profraw"
               THREADS="$(nproc 2>/dev/null || echo 1)"
               HASH_MB=256
-              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth %d\nquit\n" \
-                "$THREADS" "$HASH_MB" "$fen" "$depth" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_perft_out.txt || true
+              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" \
+                "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented.txt 2>&1 || true
             fi
-          }
-  
-          idx=0
-          while [ $(date +%s) -lt $END_TS ]; do
-            for fen in "${FENS[@]}"; do
-              now=$(date +%s)
-              if [ $now -ge $END_TS ]; then break 3; fi
-              if [ "$PERFT_SUPPORTED" -eq 1 ]; then
-                for d in "${PERFT_DEPTHS[@]}"; do
-                  now=$(date +%s)
-                  if [ $now -ge $END_TS ]; then break 3; fi
-                  echo "Running perft idx=$idx depth=$d..."
-                  run_workload "$fen" "$d"
-                  tail -n 20 /tmp/pgo_perft_out.txt || true
-                  idx=$((idx+1))
-                done
-              else
-                for d in 4 5 6; do
-                  now=$(date +%s)
-                  if [ $now -ge $END_TS ]; then break 3; fi
-                  echo "Running UCI search idx=$idx depth=$d..."
-                  run_workload "$fen" "$d"
-                  tail -n 20 /tmp/pgo_perft_out.txt || true
-                  idx=$((idx+1))
-                done
-              fi
-              sleep 0.05
-            done
+
+            now=$(date +%s)
+            if [ $now -ge $END_TS ]; then
+              echo "PGO runtime window reached."
+              break
+            fi
+            sleep 0.2
           done
-  
-          # Merge profraw -> merged.profdata if possible
+
+          tail -n 30 /tmp/pgo_bench_instrumented.txt || true
+
           echo "Merging .profraw files..."
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
             if command -v llvm-profdata >/dev/null 2>&1; then
@@ -227,19 +184,14 @@ jobs:
             echo "No profraw files found"
           fi
         fi
-  
-        # ------------- FINAL BUILD (use merged.profdata if present) -------------
+
         make clean || true
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
           echo "Using merged.profdata for final build."
-        
           USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
           USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
-        
-          # pass use flags to make so it doesn't get confused with other generate flags
           if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
                EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
-            # fallback to plain 'build' target if profile-build fails
             if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
                  EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
               tail -n 200 build-final.log || true
@@ -255,19 +207,23 @@ jobs:
             fi
           fi
         fi
-  
-        found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -print -quit || true)
-        if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
-        strip "$found" || true
-        mkdir -p ../../engines
-        cp "$found" ../../engines/sf || true
-        chmod +x ../../engines/sf || true
-        echo "Build complete."
 
-    - name: Build Fairy-Stockfish (clone + make, no FEN/perft)
+        found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -o -iname 'omega*' -o -iname 'sf*' -print -quit || true)
+        if [ -z "$found" ]; then tail -n 200 build-final.log || true; exit 1; fi
+        echo "Found engine binary: $found"
+        strip "$found" || true
+        mkdir -p "${ROOT}/engines"
+        cp "$found" "${ROOT}/engines/sf" || true
+        chmod +x "${ROOT}/engines/sf" || true
+        echo "Omega build complete."
+
+    - name: Build Fairy-Stockfish (clone + make — optional instrumented PGO using engine bench)
+      env:
+        PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
-        echo "=== START: clone + build Fairy-Stockfish (no FEN/perft) ==="
+        echo "=== START: clone + build Fairy-Stockfish (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
+        PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         ROOT="$(pwd)"
         rm -rf Fairy-Stockfish || true
         git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { echo "Clone failed"; exit 1; }
@@ -276,7 +232,6 @@ jobs:
         fi
         cd Fairy-Stockfish/src
 
-        # Use ccache if available
         if command -v ccache >/dev/null 2>&1; then
           export CC="ccache clang"
           export CXX="ccache clang++"
@@ -286,78 +241,163 @@ jobs:
         fi
         export CCACHE_DIR="${HOME}/.ccache"
 
-        # Common optimization flags (match Omega)
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
 
-        # Final build: try profile-build then fallback to build
-        make clean || true
-        if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy.log; then
-          if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-fairy.log; then
-            tail -n 200 build-fairy.log || true
+        if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
+          echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
+
+          INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
+          INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
+
+          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" | tee build-instr.log; then
+            echo "Instrumented build succeeded."
+          else
+            echo "Instrumented build failed; tail build-instr.log:"
+            tail -n 200 build-instr.log || true
             exit 1
+          fi
+
+          instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
+          if [ -z "$instr_bin" ]; then
+            instr_bin=$(find . -maxdepth 6 -type f -executable -print -quit || true)
+          fi
+          if [ -z "$instr_bin" ]; then
+            echo "ERROR: instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1
+          fi
+
+          export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
+
+          BENCH_TIME=12
+          timeout ${BENCH_TIME}s "${instr_bin}" bench > /tmp/pgo_bench_instrumented_fairy.txt 2>&1 || true
+          tail -n 20 /tmp/pgo_bench_instrumented_fairy.txt || true
+
+          START_TS=$(date +%s)
+          END_TS=$((START_TS + PGO_RUN_TIME))
+          echo "Instrumented workload window: ${PGO_RUN_TIME}s"
+
+          while [ $(date +%s) -lt $END_TS ]; do
+            echo "Running built-in bench iteration at $(date +%T)..."
+            if timeout 120s "${instr_bin}" bench >> /tmp/pgo_bench_instrumented_fairy.txt 2>&1; then
+              echo "bench iteration finished."
+            else
+              echo "bench failed / timed out — fallback to UCI single-run to produce profraw"
+              THREADS="$(nproc 2>/dev/null || echo 1)"
+              HASH_MB=256
+              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\nquit\n" \
+                "$THREADS" "$HASH_MB" | "${instr_bin}" >> /tmp/pgo_bench_instrumented_fairy.txt 2>&1 || true
+            fi
+
+            now=$(date +%s)
+            if [ $now -ge $END_TS ]; then
+              echo "PGO runtime window reached."
+              break
+            fi
+            sleep 0.2
+          done
+
+          tail -n 30 /tmp/pgo_bench_instrumented_fairy.txt || true
+
+          echo "Merging .profraw files..."
+          if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1; then
+            if command -v llvm-profdata >/dev/null 2>&1; then
+              llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || {
+                echo "llvm-profdata merge failed (continuing fallback)"; ls -la ${HOME}/*.profraw || true
+              }
+              echo "merged.profdata: $(ls -la ${HOME}/merged.profdata || true)"
+            else
+              echo "llvm-profdata not available - skipping merge"
+            fi
+          else
+            echo "No profraw files found"
           fi
         fi
 
-        # find built binary (try common patterns)
-        found=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
-        if [ -z "$found" ]; then
-          echo "No engine binary found via name patterns, searching any executable..."
-          found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
+        make clean || true
+        if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
+          echo "Using merged.profdata for final build."
+          USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
+          USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang \
+                 EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" | tee build-final.log; then
+              tail -n 200 build-final.log || true
+              exit 1
+            fi
+          fi
+        else
+          echo "No merged.profdata -> building optimized non-PGO binary."
+          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang | tee build-final.log; then
+              tail -n 200 build-final.log || true
+              exit 1
+            fi
+          fi
         fi
-        if [ -z "$found" ]; then
-          tail -n 200 build-fairy.log || true
-          echo "ERROR: built binary not found"
-          exit 1
-        fi
+
+        found=$(find . -maxdepth 6 -type f -executable -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
+        if [ -z "$found" ]; then found=$(find . -maxdepth 6 -type f -executable -print -quit || true); fi
+        if [ -z "$found" ]; then tail -n 200 build-final.log || true; echo "ERROR: built binary not found"; exit 1; fi
         echo "Found engine binary: $found"
         strip "$found" || true
         mkdir -p "${ROOT}/engines"
         cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; exit 1; }
         chmod +x "${ROOT}/engines/fsf"
-        echo "Fairy build & copy complete: engines/fsf"
+        echo "Fairy build complete."
 
     - name: Setup engines permissions
       run: |
         echo "🔧 Setting engine permissions..."
         chmod +x engines/fsf || true
-        chmod +x engines/fairy-stockfish_x86-64-bmi2 || true || true
+        chmod +x engines/sf || true
         chmod +x engines/ShashChess39 || true || true
-
-        # Verify engines
         echo "📋 Listing engines:"
         ls -la engines/ || true
-        
-    - name: Setup engines permissions
-      run: |
-        echo "🔧 Setting engine permissions..."
-        chmod +x engines/fairy-stockfish_x86-64-bmi2
-        chmod +x engines/ShashChess39
-        
-        # Verify engines
-        echo "📋 Listing engines:"
-        ls -la engines/
 
-    - name: Setup token
+    - name: Run built-in bench (uses default positions from each engine)
       run: |
-        python3 << 'EOF'
-        import yaml, os
+        echo "=== Running engine bench (default positions) ==="
+        mkdir -p bench_outputs
+        if [ -x "./engines/fsf" ]; then
+          echo "-> Fairy (engines/fsf) bench (default suite)" | tee bench_outputs/fsf_bench.txt
+          ./engines/fsf bench 2>&1 | tee -a bench_outputs/fsf_bench.txt || true
+        else
+          echo "engines/fsf not found or not executable" | tee bench_outputs/fsf_bench.txt
+        fi
+
+        if [ -x "./engines/sf" ]; then
+          echo "-> Omega/Stockfish (engines/sf) bench (default suite)" | tee bench_outputs/sf_bench.txt
+          ./engines/sf bench 2>&1 | tee -a bench_outputs/sf_bench.txt || true
+        else
+          echo "engines/sf not found or not executable" | tee bench_outputs/sf_bench.txt
+        fi
+
+    - name: Setup token & config
+      run: |
+        python3 << 'PY'
+        import yaml, os, sys
         try:
-            with open('config.yml', 'r') as f:
-                config = yaml.safe_load(f) or {}
-            config['token'] = os.environ['LICHESS_TOKEN']
+            cfg_path = 'config.yml'
+            try:
+                with open(cfg_path, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+            except FileNotFoundError:
+                config = {}
+            config['token'] = os.environ.get('LICHESS_TOKEN', '')
             config.setdefault('engine', {})
             config['engine']['dir'] = './engines'
-            config['engine']['name'] = 'stockfish'
-            with open('config.yml', 'w') as f:
+            config['engine']['name'] = 'fsf'
+            with open(cfg_path, 'w') as f:
                 yaml.dump(config, f, default_flow_style=False)
             print("✅ Configuration successful")
         except Exception as e:
             print(f"❌ Error: {e}")
-            exit(1)
-        EOF
-        
+            sys.exit(1)
+        PY
+
     - name: Launch bot
       timeout-minutes: 340
       run: |
