@@ -42,7 +42,7 @@ engines:
     limits:
   variants:                               # Engine used for variants when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
-    name: "fairy-stockfish_x86-64-bmi2"           # Binary name of the engine to use. (You need to download Fairy-Stockfish and place it in the engines directory)
+    name: "fsf"           # Binary name of the engine to use. (You need to download Fairy-Stockfish and place it in the engines directory)
     ponder: true                          # Think on opponent's time.
     silence_stderr: false                 # Suppresses stderr output.
     move_overhead_multiplier: 5.5         # Increase if your bot flags games too often. Default move overhead is 1 second per 1 minute initital time.
@@ -484,6 +484,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
