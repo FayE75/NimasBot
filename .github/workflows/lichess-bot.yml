@@ -99,20 +99,17 @@ jobs:
         sudo apt-get clean
         sudo rm -rf /var/lib/apt/lists/* || true
 
-    - name: Build Omega (clone + make — optional instrumented PGO using engine bench)
+        - name: Build Omega (clone + make — prefer non-PGO in CI)
       env:
         PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
         set -x
-        echo "=== START: clone + build Omega (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
+        echo "=== START: clone + build Omega ==="
         PGO_RUN_TIME=${PGO_RUN_TIME:-120}
         ROOT="$(pwd)"
         rm -rf Omega || true
         git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega || git clone https://github.com/FayE75/Omega.git Omega || { echo "Clone failed"; exit 1; }
-        if [ ! -d Omega/src ]; then
-          echo "ERROR: Omega/src not found after clone"; ls -la Omega || true; exit 1
-        fi
         cd Omega/src
 
         if command -v ccache >/dev/null 2>&1; then
@@ -123,102 +120,72 @@ jobs:
           export CXX="clang++"
         fi
         export CCACHE_DIR="${HOME}/.ccache"
-
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
 
-        # (Instrumented generate block left as-is if PERFORM_GENERATE=1)
+        # If user explicitly requested instrumented generate, keep that flow (not default)
         if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
-          echo "Running instrumented (generate) build — CFLAGS=$CFLAGS"
+          echo "Instrumented generate stage requested (PERFORM_GENERATE=1). Running instrumented profile-build..."
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" 2>&1 | tee build-instr.log || { echo "Instrumented build failed"; tail -n 200 build-instr.log || true; exit 1; }
-          # produce profraw with instrumented binary...
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" 2>&1 | tee build-instr.log || { tail -n 200 build-instr.log || true; exit 1; }
+          # produce profraw by running bench (kept minimal)
           instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'omega*' -o -iname 'stockfish*' -print -quit || true)
           [ -n "$instr_bin" ] || { echo "instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1; }
           export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
           timeout 12s "${instr_bin}" bench > /tmp/pgo_bench_instrumented.txt 2>&1 || true
-          # run iterations...
-          # (kept as before; omitted here to keep snippet concise)
-          # merge profraws (if llvm-profdata available)
+          # merge profraw if any
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1 && command -v llvm-profdata >/dev/null 2>&1; then
-            llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || echo "llvm-profdata merge failed (continuing without merged.profdata)"
+            llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || echo "llvm-profdata merge failed (continuing)"
           fi
         fi
 
         make clean || true
 
-        # Try profile-build first (if merged.profdata exists we still prefer profile-build)
-        BUILD_RC=0
+        # Choose build target:
         if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
-          echo "Using merged.profdata for final build."
-          USE_EXTRAS="-fprofile-instr-use=${HOME}/merged.profdata -fcoverage-mapping"
-          USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged.profdata -flto=thin"
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}" 2>&1 | tee build-final.log; then
-            BUILD_RC=0
-          else
-            BUILD_RC=${PIPESTATUS[0]:-1}
-          fi
+          echo "merged.profdata found -> performing profile-build (PGO) ..."
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }
         else
-          echo "No merged.profdata -> trying profile-build (non-PGO) then fallback."
-          if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log; then
-            BUILD_RC=0
-          else
-            BUILD_RC=${PIPESTATUS[0]:-1}
-          fi
+          echo "No merged.profdata -> performing non-PGO 'make build' (preferred in CI) ..."
+          make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }
         fi
 
-        if [ $BUILD_RC -ne 0 ]; then
-          echo "profile-build failed with code $BUILD_RC, attempting plain 'make build' as fallback..."
-          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee -a build-final.log; then
-            BUILD_RC=0
-          else
-            BUILD_RC=${PIPESTATUS[0]:-1}
-          fi
-        fi
+        echo "Build finished — listing files here:"
+        ls -la . || true
 
-        if [ $BUILD_RC -ne 0 ]; then
-          echo "BUILD FAILED (code $BUILD_RC). Tail of build-final.log:"
-          tail -n 400 build-final.log || true
-          exit $BUILD_RC
-        fi
-
-        found=$(find . -maxdepth 6 -type f -executable -iname 'stockfish*' -o -iname 'omega*' -o -iname 'sf*' -print -quit || true)
+        # Try to locate built binary (look for common names and copy it BEFORE any cleanup)
+        found=$(find . -maxdepth 6 -type f -iname 'omega*' -o -iname 'stockfish*' -o -iname 'sf*' -print -quit || true)
         if [ -z "$found" ]; then
-          echo "No engine binary found after successful build? Dumping build-final.log"
+          echo "No engine binary found after build! Dumping build-final.log"
           tail -n 400 build-final.log || true
           exit 1
         fi
         echo "Found engine binary: $found"
-        strip "$found" || true
         mkdir -p "${ROOT}/engines"
         cp "$found" "${ROOT}/engines/sf" || { echo "Copy failed"; ls -la . || true; exit 1; }
         chmod +x "${ROOT}/engines/sf" || true
-        echo "Omega build complete."
+        echo "Omega build complete and copied to ${ROOT}/engines/sf"
 
-        # run profileclean but don't treat non-zero as fatal (we want the build artifact anyway)
+        # Optional: run profileclean but do NOT let it remove our artifact (non-fatal)
         if make ARCH=x86-64-bmi2 COMP=clang profileclean 2>&1 | tee profileclean.log; then
           echo "profileclean ok"
         else
-          echo "profileclean failed; exit code non-zero but continuing. See profileclean.log"
+          echo "profileclean returned non-zero (non-fatal). See profileclean.log"
           tail -n 200 profileclean.log || true
         fi
 
-    - name: Build Fairy-Stockfish (clone + make — optional instrumented PGO using engine bench)
+    - name: Build Fairy-Stockfish (clone + make — prefer non-PGO in CI)
       env:
         PERFORM_GENERATE: 0
       run: |
         set -euo pipefail
         set -x
-        echo "=== START: clone + build Fairy-Stockfish (no manual FEN/perft unless PERFORM_GENERATE=1) ==="
-        PGO_RUN_TIME=${PGO_RUN_TIME:-120}
+        echo "=== START: clone + build Fairy-Stockfish ==="
         ROOT="$(pwd)"
         rm -rf Fairy-Stockfish || true
         git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { echo "Clone failed"; exit 1; }
-        if [ ! -d Fairy-Stockfish/src ]; then
-          echo "ERROR: Fairy-Stockfish/src not found after clone"; ls -la Fairy-Stockfish || true; exit 1
-        fi
         cd Fairy-Stockfish/src
 
         if command -v ccache >/dev/null 2>&1; then
@@ -229,21 +196,18 @@ jobs:
           export CXX="clang++"
         fi
         export CCACHE_DIR="${HOME}/.ccache"
-
         COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
         export CFLAGS="$COMMON_FLAGS"
         export CXXFLAGS="$COMMON_FLAGS"
 
-        # Instrumented (generate) stage if requested
         if [ "${PERFORM_GENERATE:-0}" -eq 1 ]; then
           INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
           INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" 2>&1 | tee build-instr.log || { echo "Instrumented build failed"; tail -n 200 build-instr.log || true; exit 1; }
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}" 2>&1 | tee build-instr.log || { tail -n 200 build-instr.log || true; exit 1; }
           instr_bin=$(find . -maxdepth 6 -type f -executable -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
           [ -n "$instr_bin" ] || { echo "instrumented binary not found"; tail -n 200 build-instr.log || true; exit 1; }
           export LLVM_PROFILE_FILE="${HOME}/pgo-%p.profraw"
           timeout 12s "${instr_bin}" bench > /tmp/pgo_bench_instrumented_fairy.txt 2>&1 || true
-          # ... run more iterations and merge profraws if any ...
           if compgen -G "${HOME}/pgo-*.profraw" >/dev/null 2>&1 && command -v llvm-profdata >/dev/null 2>&1; then
             llvm-profdata merge -o "${HOME}/merged.profdata" ${HOME}/pgo-*.profraw || echo "llvm-profdata merge failed (continuing)"
           fi
@@ -251,49 +215,36 @@ jobs:
 
         make clean || true
 
-        # try profile-build then fallback to plain build
-        BUILD_RC=0
-        if make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log; then
-          BUILD_RC=0
+        if [ -f "${HOME}/merged.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
+          echo "merged.profdata found -> performing profile-build (PGO) ..."
+          make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }
         else
-          BUILD_RC=${PIPESTATUS[0]:-1}
+          echo "No merged.profdata -> performing non-PGO 'make build' ..."
+          make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee build-final.log || { tail -n 400 build-final.log || true; exit 1; }
         fi
 
-        if [ $BUILD_RC -ne 0 ]; then
-          echo "profile-build failed with code $BUILD_RC, attempting plain 'make build'..."
-          if make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang 2>&1 | tee -a build-final.log; then
-            BUILD_RC=0
-          else
-            BUILD_RC=${PIPESTATUS[0]:-1}
-          fi
-        fi
+        echo "Build finished — listing files here:"
+        ls -la . || true
 
-        if [ $BUILD_RC -ne 0 ]; then
-          echo "BUILD FAILED (code $BUILD_RC). Tail of build-final.log:"
+        found=$(find . -maxdepth 6 -type f -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
+        if [ -z "$found" ]; then
+          found=$(find . -maxdepth 6 -type f -print -quit || true)
+        fi
+        if [ -z "$found" ]; then
           tail -n 400 build-final.log || true
-          exit $BUILD_RC
-        fi
-
-        found=$(find . -maxdepth 6 -type f -executable -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' -print -quit || true)
-        if [ -z "$found" ]; then
-          found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
-        fi
-        if [ -z "$found" ]; then
-          tail -n 200 build-final.log || true
           echo "ERROR: built binary not found"
           exit 1
         fi
         echo "Found engine binary: $found"
-        strip "$found" || true
         mkdir -p "${ROOT}/engines"
-        cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; exit 1; }
-        chmod +x "${ROOT}/engines/fsf"
-        echo "Fairy build complete."
+        cp "$found" "${ROOT}/engines/fsf" || { echo "Copy failed"; ls -la . || true; exit 1; }
+        chmod +x "${ROOT}/engines/fsf" || true
+        echo "Fairy build complete and copied to ${ROOT}/engines/fsf"
 
         if make ARCH=x86-64-bmi2 COMP=clang profileclean 2>&1 | tee profileclean_fairy.log; then
           echo "profileclean fairy ok"
         else
-          echo "profileclean fairy failed (non-fatal). See profileclean_fairy.log"
+          echo "profileclean fairy returned non-zero (non-fatal). See profileclean_fairy.log"
           tail -n 200 profileclean_fairy.log || true
         fi
 
