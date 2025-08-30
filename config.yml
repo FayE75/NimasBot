@@ -180,12 +180,12 @@ opening_books:
     chess960_white:
       selection: best_move
       names:
-        - chess960_nimas
+        # - chess960_nimas
         - chess960
     chess960_black:
       selection: best_move
       names:
-        - chess960_nimas
+        # - chess960_nimas
         - chess960
     antichess_white:
       selection: best_move
@@ -482,6 +482,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
