@@ -14,6 +14,19 @@ engines:
       Minimum Thinking Time: 0
       Slow Mover: 65
     limits:
+  blitz:                               # Engine used for standard chess and when no suitable special engine is configured.
+    dir: "./engines"                      # Directory containing the engine.
+    name: "sf"                     # Binary name of the engine to use.
+    ponder: true                          # Think on opponent's time.
+    silence_stderr: false                 # Suppresses stderr output.
+    move_overhead_multiplier: 6.5         # Optimized for bullet games.
+    uci_options:                          # Arbitrary UCI options passed to the engine.
+      Threads: 8                          # Increased threads for Threadripper power.
+      Hash: 8192                           # Increased hash for better position evaluation.
+      Move Overhead: 250                  # Reduced for faster bullet moves.
+      Minimum Thinking Time: 0
+      Slow Mover: 90
+    limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
     name: "sf"                     # Binary name of the engine to use.
@@ -484,6 +497,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
