@@ -487,6 +487,7 @@ books:
   white_tournament_1: "./books/std/White_tournament_1.bin"
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
+  kara: "./books/std/Kara.bin"
 
 auto_rematch:
   enabled: true                          # Activate auto-rematch functionality.
@@ -498,6 +499,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
