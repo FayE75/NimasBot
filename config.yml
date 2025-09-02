@@ -12,7 +12,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 60
+      Slow Mover: 25
     limits:
   blitz:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -25,7 +25,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 10
+      Slow Mover: 25
     limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -38,7 +38,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 100
+      Slow Mover: 25
     limits:
   chess960:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -64,7 +64,7 @@ engines:
       Hash: 8192                           # Large hash for variant calculations.
       Move Overhead: 250                  # Increase if your bot flags games too often.
       # Minimum Thinking Time: 0
-      Slow Mover: 90
+      Slow Mover: 25
       Use NNUE: true
       EvalFile: "3check-cb5f517c228b.nnue:antichess-dd3cbe53cd4e.nnue:atomic-2cf13ff256cc.nnue:crazyhouse-8ebf84784ad2.nnue:horde-28173ddccabe.nnue:kingofthehill-978b86d0e6a4.nnue:racingkings-636b95f085e3.nnue"
       UCI_Elo: 2850
@@ -108,7 +108,7 @@ gaviota:
   max_pieces: 5                           # Count of max pieces in the local gaviota endgame tablebases.
 
 opening_books:
-  enabled: false                           # Activate opening books.
+  enabled: true                           # Activate opening books.
   priority: 400                           # Priority with which this move source is used. Higher priority is used first.
   read_learn: false                       # Whether to read the learn values from the books.
   books:
@@ -149,14 +149,14 @@ opening_books:
     3+0_white:                             
       selection: best_move
       names:
-        # - nimas
-        - white_1
+        - nimas
+        # - white_1
     3+0_black:                             
       selection: best_move
       names:
-        # - black_tournament
+        - black_tournament
         # - nimas
-        - white_2
+        # - white_2
         # - owen_rapid
     blitz_white:                             
       selection: weighted_random
@@ -321,7 +321,7 @@ online_moves:
 #   max_depth: 16                         # Half move max depth. (Comment this line for max depth)
 #   max_moves: 1                          # Max number of moves played from Lichess cloud eval. (Comment this line for max moves)
   chessdb:
-    enabled: true                        # Activate online moves from https://chessdb.cn/queryc_en/
+    enabled: false                        # Activate online moves from https://chessdb.cn/queryc_en/
     priority: 100                         # Priority with which this move source is used. Higher priority is used first.
     only_without_book: true              # Whether the chessdb should only be used if there is no matching book.
     min_candidates: 1                     # Minimum number of candidate moves.
@@ -501,6 +501,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
