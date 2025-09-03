@@ -60,6 +60,7 @@ jobs:
         else
           true
         fi
+        pip install tenacity
         
     - name: Build Omega (single-step clang PGO build — safe PGO flow)
       run: |
