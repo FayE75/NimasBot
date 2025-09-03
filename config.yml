@@ -149,12 +149,14 @@ opening_books:
     3+0_white:                             
       selection: best_move
       names:
-        - nimas
+        - owen_bullet
+        # - nimas
         # - white_1
     3+0_black:                             
       selection: best_move
       names:
-        - black_tournament
+        - owen_bullet
+        # - black_tournament
         # - nimas
         # - white_2
         # - owen_rapid
@@ -501,6 +503,7 @@ auto_rematch:
   only_against_humans: false              # Only offer rematch against human accounts.
   alternate_colors: true                  # Alternate colors for rematches.
   message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
+
 
 
 
