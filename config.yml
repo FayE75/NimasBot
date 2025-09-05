@@ -19,13 +19,13 @@ engines:
     name: "sf"                     # Binary name of the engine to use.
     ponder: true                          # Think on opponent's time.
     silence_stderr: false                 # Suppresses stderr output.
-    move_overhead_multiplier: 5.5         # Optimized for bullet games.
+    move_overhead_multiplier: 2.5         # Optimized for bullet games.
     uci_options:                          # Arbitrary UCI options passed to the engine.
       Threads: 8                          # Increased threads for Threadripper power.
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 80
+      Slow Mover: 25
     limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -491,23 +491,3 @@ books:
   white_tournament_1: "./books/std/White_tournament_1.bin"
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
-  kara: "./books/std/Kara.bin"
-
-auto_rematch:
-  enabled: true                          # Activate auto-rematch functionality.
-  max_rematches: 3                        # Maximum number of consecutive rematches with the same opponent.
-  delay: 2                                # Delay in seconds before sending rematch challenge.
-  only_after_wins: false                  # Only offer rematch after winning.
-  only_after_losses: false                # Only offer rematch after losing.
-  only_against_bots: false                # Only offer rematch against BOT accounts.
-  only_against_humans: false              # Only offer rematch against human accounts.
-  alternate_colors: true                  # Alternate colors for rematches.
-  message: "Would you like another game? I've sent a rematch challenge!" # Custom message to send with rematch.
-
-
-
-
-
-
-
-
