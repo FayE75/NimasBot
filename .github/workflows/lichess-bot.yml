@@ -219,169 +219,169 @@ jobs:
         cp "$found" ../../engines/sf || true
         chmod +x ../../engines/sf || true
   
-    - name: Build Fairy-Stockfish (clone + clang PGO build — bench/testpos workload)
-      run: |
-        set -euo pipefail
-        PERFORM_GENERATE=${PERFORM_GENERATE:-0}
-        PGO_RUN_TIME=${PGO_RUN_TIME:-120}
+    # - name: Build Fairy-Stockfish (clone + clang PGO build — bench/testpos workload)
+    #   run: |
+    #     set -euo pipefail
+    #     PERFORM_GENERATE=${PERFORM_GENERATE:-0}
+    #     PGO_RUN_TIME=${PGO_RUN_TIME:-120}
   
-        ROOT="$(pwd)"
-        rm -rf Fairy-Stockfish || true
-        git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { exit 1; }
-        if [ ! -d Fairy-Stockfish/src ]; then
-          exit 1
-        fi
+    #     ROOT="$(pwd)"
+    #     rm -rf Fairy-Stockfish || true
+    #     git clone https://github.com/fairy-stockfish/Fairy-Stockfish.git Fairy-Stockfish || { exit 1; }
+    #     if [ ! -d Fairy-Stockfish/src ]; then
+    #       exit 1
+    #     fi
   
-        sudo apt-get update -qq || true
-        cd Fairy-Stockfish/src
+    #     sudo apt-get update -qq || true
+    #     cd Fairy-Stockfish/src
   
-        if command -v ccache >/dev/null 2>&1; then
-          export CC="ccache clang"
-          export CXX="ccache clang++"
-        else
-          export CC="clang"
-          export CXX="clang++"
-        fi
-        export CCACHE_DIR="${HOME}/.ccache"
+    #     if command -v ccache >/dev/null 2>&1; then
+    #       export CC="ccache clang"
+    #       export CXX="ccache clang++"
+    #     else
+    #       export CC="clang"
+    #       export CXX="clang++"
+    #     fi
+    #     export CCACHE_DIR="${HOME}/.ccache"
   
-        COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
-        export CFLAGS="$COMMON_FLAGS"
-        export CXXFLAGS="$COMMON_FLAGS"
+    #     COMMON_FLAGS="-O3 -march=native -mtune=native -flto=thin -funroll-loops -fomit-frame-pointer"
+    #     export CFLAGS="$COMMON_FLAGS"
+    #     export CXXFLAGS="$COMMON_FLAGS"
   
-        FEN_CANDIDATES="/tmp/fairy_fens.txt"
-        : > "$FEN_CANDIDATES" || true
+    #     FEN_CANDIDATES="/tmp/fairy_fens.txt"
+    #     : > "$FEN_CANDIDATES" || true
   
-        grep -RInhoP '^[rnbqkpRNBQKP1-8/]{8,}\s+[wb]\s+[^ ]+\s+[^ ]+\s+\d+\s+\d+' .. 2>/dev/null \
-          | sed -E 's/^[^:]+://g' | sort -u > "$FEN_CANDIDATES" || true
+    #     grep -RInhoP '^[rnbqkpRNBQKP1-8/]{8,}\s+[wb]\s+[^ ]+\s+[^ ]+\s+\d+\s+\d+' .. 2>/dev/null \
+    #       | sed -E 's/^[^:]+://g' | sort -u > "$FEN_CANDIDATES" || true
   
-        if [ ! -s "$FEN_CANDIDATES" ]; then
-          grep -RInhoP '([rnbqkpRNBQKP1-8/]{8,}/[rnbqkpRNBQKP1-8/]{7,})\s+[wb]' .. 2>/dev/null \
-            | sed -E 's/^[^:]+://;s/\r$//' | sort -u > "$FEN_CANDIDATES" || true
-        fi
+    #     if [ ! -s "$FEN_CANDIDATES" ]; then
+    #       grep -RInhoP '([rnbqkpRNBQKP1-8/]{8,}/[rnbqkpRNBQKP1-8/]{7,})\s+[wb]' .. 2>/dev/null \
+    #         | sed -E 's/^[^:]+://;s/\r$//' | sort -u > "$FEN_CANDIDATES" || true
+    #     fi
   
-        if [ -s "$FEN_CANDIDATES" ]; then
-          mapfile -t FENS < "$FEN_CANDIDATES"
-        else
-          FENS=()
-        fi
+    #     if [ -s "$FEN_CANDIDATES" ]; then
+    #       mapfile -t FENS < "$FEN_CANDIDATES"
+    #     else
+    #       FENS=()
+    #     fi
   
-        if [ "$PERFORM_GENERATE" -eq 1 ]; then
-          INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
-          INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}"; then
-            exit 1
-          fi
+    #     if [ "$PERFORM_GENERATE" -eq 1 ]; then
+    #       INSTR_EXTRAS="-fprofile-instr-generate -fcoverage-mapping"
+    #       INSTR_LDFLAGS="-fprofile-instr-generate -fcoverage-mapping -flto=thin"
+    #       if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+    #            EXTRACXXFLAGS="${INSTR_EXTRAS}" EXTRALDFLAGS="${INSTR_LDFLAGS}"; then
+    #         exit 1
+    #       fi
   
-          instr_bin=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
-          if [ -z "$instr_bin" ]; then
-            exit 1
-          fi
+    #       instr_bin=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
+    #       if [ -z "$instr_bin" ]; then
+    #         exit 1
+    #       fi
   
-          export LLVM_PROFILE_FILE="${HOME}/pgo-fairy-%p.profraw"
-          START_TS=$(date +%s)
-          END_TS=$((START_TS + PGO_RUN_TIME))
+    #       export LLVM_PROFILE_FILE="${HOME}/pgo-fairy-%p.profraw"
+    #       START_TS=$(date +%s)
+    #       END_TS=$((START_TS + PGO_RUN_TIME))
   
-          BENCH_SUPPORTED=0
-          probe_out=$("${instr_bin}" bench 2>&1 || true)
-          if ! printf "%s" "$probe_out" | grep -qi "Unknown command\|unknown command\|usage"; then
-            BENCH_SUPPORTED=1
-          fi
+    #       BENCH_SUPPORTED=0
+    #       probe_out=$("${instr_bin}" bench 2>&1 || true)
+    #       if ! printf "%s" "$probe_out" | grep -qi "Unknown command\|unknown command\|usage"; then
+    #         BENCH_SUPPORTED=1
+    #       fi
   
-          PERFT_SUPPORTED=0
-          probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
-          if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
-            PERFT_SUPPORTED=1
-          fi
+    #       PERFT_SUPPORTED=0
+    #       probe_out=$({ printf "perft 1\nquit\n" | "${instr_bin}" 2>&1 || true; } )
+    #       if ! printf "%s" "$probe_out" | grep -qi "Unknown command"; then
+    #         PERFT_SUPPORTED=1
+    #       fi
   
-          run_workload_from_fens() {
-            local fen
-            local idx=0
-            for fen in "${FENS[@]}"; do
-              now=$(date +%s); if [ $now -ge $END_TS ]; then break; fi
-              if [ "$PERFT_SUPPORTED" -eq 1 ]; then
-                printf "position fen %s\nperft 4\nquit\n" "$fen" | "${instr_bin}" > /tmp/pgo_fairy_perft_out.txt 2>&1 || true
-              else
-                THREADS="$(nproc 2>/dev/null || echo 1)"
-                HASH_MB=256
-                printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth 6\nquit\n" \
-                  "$THREADS" "$HASH_MB" "$fen" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_perft_out.txt || true
-              fi
-              idx=$((idx+1))
-              sleep 0.05
-              now=$(date +%s); if [ $now -ge $END_TS ]; then break; fi
-            done
-          }
+    #       run_workload_from_fens() {
+    #         local fen
+    #         local idx=0
+    #         for fen in "${FENS[@]}"; do
+    #           now=$(date +%s); if [ $now -ge $END_TS ]; then break; fi
+    #           if [ "$PERFT_SUPPORTED" -eq 1 ]; then
+    #             printf "position fen %s\nperft 4\nquit\n" "$fen" | "${instr_bin}" > /tmp/pgo_fairy_perft_out.txt 2>&1 || true
+    #           else
+    #             THREADS="$(nproc 2>/dev/null || echo 1)"
+    #             HASH_MB=256
+    #             printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition fen %s\ngo depth 6\nquit\n" \
+    #               "$THREADS" "$HASH_MB" "$fen" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_perft_out.txt || true
+    #           fi
+    #           idx=$((idx+1))
+    #           sleep 0.05
+    #           now=$(date +%s); if [ $now -ge $END_TS ]; then break; fi
+    #         done
+    #       }
   
-          run_workload_bench() {
-            timeout 30 "${instr_bin}" bench > /tmp/pgo_fairy_bench_instrumented.txt 2>&1 || true
-          }
+    #       run_workload_bench() {
+    #         timeout 30 "${instr_bin}" bench > /tmp/pgo_fairy_bench_instrumented.txt 2>&1 || true
+    #       }
   
-          run_workload_startpos() {
-            THREADS="$(nproc 2>/dev/null || echo 1)"
-            HASH_MB=256
-            while [ $(date +%s) -lt $END_TS ]; do
-              printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\n" "$THREADS" "$HASH_MB" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_startpos_out.txt || true
-              sleep 0.05
-            done
-          }
+    #       run_workload_startpos() {
+    #         THREADS="$(nproc 2>/dev/null || echo 1)"
+    #         HASH_MB=256
+    #         while [ $(date +%s) -lt $END_TS ]; do
+    #           printf "uci\nsetoption name Threads value %d\nsetoption name Hash value %d\nucinewgame\nisready\nposition startpos\ngo depth 6\n" "$THREADS" "$HASH_MB" | "${instr_bin}" 2>&1 | sed '/^option name/ d' > /tmp/pgo_fairy_startpos_out.txt || true
+    #           sleep 0.05
+    #         done
+    #       }
   
-          if [ "${#FENS[@]}" -gt 0 ]; then
-            while [ $(date +%s) -lt $END_TS ]; do
-              run_workload_from_fens
-            done
-          else
-            if [ "$BENCH_SUPPORTED" -eq 1 ]; then
-              while [ $(date +%s) -lt $END_TS ]; do
-                run_workload_bench
-                sleep 0.05
-              done
-            else
-              run_workload_startpos
-            fi
-          fi
+    #       if [ "${#FENS[@]}" -gt 0 ]; then
+    #         while [ $(date +%s) -lt $END_TS ]; do
+    #           run_workload_from_fens
+    #         done
+    #       else
+    #         if [ "$BENCH_SUPPORTED" -eq 1 ]; then
+    #           while [ $(date +%s) -lt $END_TS ]; do
+    #             run_workload_bench
+    #             sleep 0.05
+    #           done
+    #         else
+    #           run_workload_startpos
+    #         fi
+    #       fi
   
-          if compgen -G "${HOME}/pgo-fairy-*.profraw" >/dev/null 2>&1; then
-            if command -v llvm-profdata >/dev/null 2>&1; then
-              llvm-profdata merge -o "${HOME}/merged-fairy.profdata" ${HOME}/pgo-fairy-*.profraw || true
-            fi
-          fi
-        fi
+    #       if compgen -G "${HOME}/pgo-fairy-*.profraw" >/dev/null 2>&1; then
+    #         if command -v llvm-profdata >/dev/null 2>&1; then
+    #           llvm-profdata merge -o "${HOME}/merged-fairy.profdata" ${HOME}/pgo-fairy-*.profraw || true
+    #         fi
+    #       fi
+    #     fi
   
-        make clean || true
-        if [ -f "${HOME}/merged-fairy.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
-          USE_EXTRAS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -fcoverage-mapping"
-          USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -flto=thin"
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
-               EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}"; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
-              exit 1
-            fi
-          fi
-        else
-          if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang; then
-            if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
-              exit 1
-            fi
-          fi
-        fi
+    #     make clean || true
+    #     if [ -f "${HOME}/merged-fairy.profdata" ] && command -v llvm-profdata >/dev/null 2>&1; then
+    #       USE_EXTRAS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -fcoverage-mapping"
+    #       USE_LDFLAGS="-fprofile-instr-use=${HOME}/merged-fairy.profdata -flto=thin"
+    #       if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang \
+    #            EXTRACXXFLAGS="${USE_EXTRAS}" EXTRALDFLAGS="${USE_LDFLAGS}"; then
+    #         if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
+    #           exit 1
+    #         fi
+    #       fi
+    #     else
+    #       if ! make -j$(nproc) profile-build ARCH=x86-64-bmi2 COMP=clang; then
+    #         if ! make -j$(nproc) build ARCH=x86-64-bmi2 COMP=clang; then
+    #           exit 1
+    #         fi
+    #       fi
+    #     fi
   
-        found=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
-        if [ -z "$found" ]; then
-          found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
-        fi
-        if [ -z "$found" ]; then
-          exit 1
-        fi
-        strip "$found" || true
-        mkdir -p "${ROOT}/engines"
-        cp "$found" "${ROOT}/engines/fsf" || { exit 1; }
-        chmod +x "${ROOT}/engines/fsf"
+    #     found=$(find . -maxdepth 6 -type f -executable \( -iname 'fairy*' -o -iname 'stockfish*' -o -iname 'fsf*' \) -print -quit || true)
+    #     if [ -z "$found" ]; then
+    #       found=$(find . -maxdepth 6 -type f -executable -print -quit || true)
+    #     fi
+    #     if [ -z "$found" ]; then
+    #       exit 1
+    #     fi
+    #     strip "$found" || true
+    #     mkdir -p "${ROOT}/engines"
+    #     cp "$found" "${ROOT}/engines/fsf" || { exit 1; }
+    #     chmod +x "${ROOT}/engines/fsf"
 
     - name: Setup engines permissions
       run: |
         chmod +x engines/sf || true
-        chmod +x engines/fsf || true
+        # chmod +x engines/fsf || true
         ls -la engines/ || true
       
     - name: Setup token
