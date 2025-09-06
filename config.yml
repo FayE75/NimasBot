@@ -339,9 +339,9 @@ online_moves:
 
 offer_draw:
   enabled: true                           # Activate whether the bot should offer draw.
-  score: 10                                # Tighter draw threshold - only accept truly equal positions.
-  consecutive_moves: 5                   # More moves required before considering draw.
-  min_game_length: 20                     # Later draw offers to avoid early draws.
+  score: 5                                # Tighter draw threshold - only accept truly equal positions.
+  consecutive_moves: 3                   # More moves required before considering draw.
+  min_game_length: 10                     # Later draw offers to avoid early draws.
   against_humans: false                    # Activate whether these settings should apply against humans.
   allow_in_tournaments: true             # Allow offering draws in tournaments even for 0.5+0 games. By default, draws are never offered in 0.5+0 games.
   accept_30_second_draws: true          
@@ -402,7 +402,7 @@ challenge:                                # Incoming challenges.
 #     - 25+0
   bot_modes:                              # Game modes to accept against BOTs.
     # - casual                              # Unrated games (accept casual games even if they don't meet min rating diff)
-    # - rated                               # Rated games
+    - rated                               # Rated games
   human_modes:                            # Game modes to accept against humans.
     # - casual                              # Unrated games.
     # - rated                               # Rated games
@@ -491,5 +491,6 @@ books:
   white_tournament_1: "./books/std/White_tournament_1.bin"
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
+
 
 
