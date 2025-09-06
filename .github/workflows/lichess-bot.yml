@@ -406,4 +406,5 @@ jobs:
     - name: Launch bot
       timeout-minutes: 340
       run: |
-        python3 user_interface.py
+        # python3 user_interface.py
+        python3 user_interface.py "tournament YnQTooxC"
