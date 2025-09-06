@@ -149,14 +149,14 @@ opening_books:
     3+0_white:                             
       selection: best_move
       names:
-        - owen_bullet
-        # - nimas
+        # - owen_bullet
+        - nimas
         # - white_1
     3+0_black:                             
       selection: best_move
       names:
-        - owen_bullet
-        # - black_tournament
+        # - owen_bullet
+        - black_tournament
         # - nimas
         # - white_2
         # - owen_rapid
@@ -491,3 +491,4 @@ books:
   white_tournament_1: "./books/std/White_tournament_1.bin"
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
+
