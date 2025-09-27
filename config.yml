@@ -25,7 +25,7 @@ engines:
       Hash: 8192                           # Increased hash for better position evaluation.
       Move Overhead: 250                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 20
+      Slow Mover: 80
     limits:
   standard:                               # Engine used for standard chess and when no suitable special engine is configured.
     dir: "./engines"                      # Directory containing the engine.
@@ -497,5 +497,6 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
