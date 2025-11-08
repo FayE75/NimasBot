@@ -417,16 +417,16 @@ matchmaking:
   timeout: 30                             # Time until a challenge is canceled.
   selection: weighted_random              # Matchmkaing type selection is one of "weighted_random", "sequential" or "cyclic".
   types:                                  # Matchmaking types of which one is selected before each game.
-    # bullet:                               # Arbitrary name of the matchmaking type. Names must be unique.
-    #   tc: 0.5+0                             # Time control in initial_minutes+increment_seconds format.
-    # chess960_2:
-    #   tc: 1+0
-    #   rated: true
-    #   variant: chess960
-    # chess960_3:
-    #   tc: 0.5+0
-    #   rated: true
-    #   variant: chess960
+    bullet:                               # Arbitrary name of the matchmaking type. Names must be unique.
+      tc: 0.5+0                             # Time control in initial_minutes+increment_seconds format.
+    chess960_2:
+      tc: 1+0
+      rated: true
+      variant: chess960
+    chess960_3:
+      tc: 0.5+0
+      rated: true
+      variant: chess960
 #   casual_chess960:
 #     tc: 0.5+1
 #     rated: false
@@ -497,6 +497,7 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
 
