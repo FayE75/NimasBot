@@ -407,7 +407,7 @@ challenge:                                # Incoming challenges.
 #     - 25+0
   bot_modes:                              # Game modes to accept against BOTs.
     # - casual                              # Unrated games (accept casual games even if they don't meet min rating diff)
-    # - rated                               # Rated games
+    - rated                               # Rated games
   human_modes:                            # Game modes to accept against humans.
     # - casual                              # Unrated games.
     # - rated                               # Rated games
@@ -417,16 +417,16 @@ matchmaking:
   timeout: 30                             # Time until a challenge is canceled.
   selection: weighted_random              # Matchmkaing type selection is one of "weighted_random", "sequential" or "cyclic".
   types:                                  # Matchmaking types of which one is selected before each game.
-    bullet:                               # Arbitrary name of the matchmaking type. Names must be unique.
-      tc: 0.5+0                             # Time control in initial_minutes+increment_seconds format.
-    chess960_2:
-      tc: 1+0
-      rated: true
-      variant: chess960
-    chess960_3:
-      tc: 0.5+0
-      rated: true
-      variant: chess960
+    # bullet:                               # Arbitrary name of the matchmaking type. Names must be unique.
+    #   tc: 0.5+0                             # Time control in initial_minutes+increment_seconds format.
+    # chess960_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: chess960
+    # chess960_3:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: chess960
 #   casual_chess960:
 #     tc: 0.5+1
 #     rated: false
@@ -447,7 +447,7 @@ messages:
   #   {cpu} to insert CPU information
   #   {ram} to insert RAM size
   # Any other words in curly braces will be removed.
-  greeting: "Hello {opponent}! I {me} use {engine} Good luck and have fun! Type !help for a list of commands."
+  greeting: "My Aunty Adinda Putri Salsabila"
   goodbye: "Thank you for the game, {opponent}!"
   greeting_spectators: "Welcome spectators! Type !help for a list of commands."
   goodbye_spectators: "Thank you all for watching!"
@@ -497,6 +497,7 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
 
