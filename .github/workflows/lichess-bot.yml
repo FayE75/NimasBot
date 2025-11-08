@@ -407,4 +407,4 @@ jobs:
       timeout-minutes: 340
       run: |
         # python3 user_interface.py
-        python3 user_interface.py "tournament Kqul9pAe"
+        python3 user_interface.py "tournament VH722Lmw"
