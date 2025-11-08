@@ -407,5 +407,5 @@ jobs:
       timeout-minutes: 340
       run: |
         # python3 user_interface.py
-        # python3 user_interface.py matchmaking
-        python3 user_interface.py "tournament VH722Lmw"
+        python3 user_interface.py matchmaking
+        # python3 user_interface.py "tournament VH722Lmw"
