@@ -49,9 +49,9 @@ engines:
     uci_options:                          # Arbitrary UCI options passed to the engine.
       Threads: 8                          # Increased threads for Threadripper power.
       Hash: 8192                           # Increased hash for better position evaluation.
-      Move Overhead: 250                  # Reduced for faster bullet moves.
+      Move Overhead: 225                  # Reduced for faster bullet moves.
       Minimum Thinking Time: 0
-      Slow Mover: 75
+      Slow Mover: 85
     limits:
   # variants:                               # Engine used for variants when no suitable special engine is configured.
   #   dir: "./engines"                      # Directory containing the engine.
@@ -497,6 +497,7 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
 
