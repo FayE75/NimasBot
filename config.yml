@@ -121,7 +121,7 @@ opening_books:
         - white_3
         # - owen_bullet
     bullet_black:                            # Other bullet games (1+0)
-      selection: best_move
+      selection: weighted_random
       # max_depth: 20                    # Limit book depth so engine evaluates positions
       names:
         # - kara
@@ -135,7 +135,7 @@ opening_books:
         # - kara
         # - nimas
     0.5+0_black:                             
-      selection: best_move
+      selection: weighted_random
       names:
         - white_2
     1+0_white:                            
@@ -143,11 +143,11 @@ opening_books:
       names:
         - nimas
     1+0_black:                            
-      selection: best_move
+      selection: weighted_random
       names:
         - white_2
     3+0_white:                             
-      selection: best_move
+      selection: weighted_random
       names:
         # - owen_bullet
         - fayefish
@@ -156,40 +156,43 @@ opening_books:
         - probook
         # - white_1
     3+0_black:                             
-      selection: best_move
+      selection: weighted_random
       names:
         # - owen_bullet
-        - black_tournament
+        # - black_tournament
+        - white_2
         - nimas
         - small
         - probook
-        # - white_2
         # - owen_rapid
     blitz_white:                             
       selection: weighted_random
       names:
         # - white_3
-        # - white_2
+        - white_2
         # - white_1
         # - owen_rapid
         - nimas
     blitz_black:                             
-      selection: best_move
+      selection: weighted_random
       names:
         # - white_3
-        # - white_2
+        - white_2
+        - nimas
+        - small
+        - probook
         # - white_1
         # - owen_rapid
         - black_tournament
     standard_white:                           
-      selection: best_move
+      selection: weighted_random
       names:
         - white_1
         - white_2
         - white_3
       # max_depth: 4
     standard_black:                           
-      selection: best_move
+      selection: weighted_random
       names:
         - white_2
       # max_depth: 4
@@ -451,62 +454,62 @@ matchmaking:
       tc: 3+0
       rated: true
       variant: standard
-    antichess_1:
-      tc: 0.5+0
-      rated: true
-      variant: antichess
-    antichess_2:
-      tc: 1+0
-      rated: true
-      variant: antichess
-    atomic_1:
-      tc: 0.5+0
-      rated: true
-      variant: atomic
-    atomic_2:
-      tc: 1+0
-      rated: true
-      variant: atomic
-    crazyhouse_1:
-      tc: 0.5+0
-      rated: true
-      variant: crazyhouse
-    crazyhouse_2:
-      tc: 1+0
-      rated: true
-      variant: crazyhouse
-    horde_1:
-      tc: 0.5+0
-      rated: true
-      variant: horde
-    horde_2:
-      tc: 1+0
-      rated: true
-      variant: horde
-    kingOfTheHill_1:
-      tc: 0.5+0
-      rated: true
-      variant: kingOfTheHill
-    kingOfTheHill_2:
-      tc: 1+0
-      rated: true
-      variant: kingOfTheHill
-    racingKings_1:
-      tc: 0.5+0
-      rated: true
-      variant: racingKings
-    racingKings_2:
-      tc: 1+0
-      rated: true
-      variant: racingKings
-    threeCheck_2:
-      tc: 0.5+0
-      rated: true
-      variant: threeCheck
-    threeCheck_2:
-      tc: 1+0
-      rated: true
-      variant: threeCheck
+    # antichess_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: antichess
+    # antichess_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: antichess
+    # atomic_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: atomic
+    # atomic_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: atomic
+    # crazyhouse_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: crazyhouse
+    # crazyhouse_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: crazyhouse
+    # horde_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: horde
+    # horde_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: horde
+    # kingOfTheHill_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: kingOfTheHill
+    # kingOfTheHill_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: kingOfTheHill
+    # racingKings_1:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: racingKings
+    # racingKings_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: racingKings
+    # threeCheck_2:
+    #   tc: 0.5+0
+    #   rated: true
+    #   variant: threeCheck
+    # threeCheck_2:
+    #   tc: 1+0
+    #   rated: true
+    #   variant: threeCheck
     
     
 #   casual_chess960:
@@ -579,6 +582,7 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
 
