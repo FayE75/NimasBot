@@ -121,7 +121,7 @@ opening_books:
         - white_3
         # - owen_bullet
     bullet_black:                            # Other bullet games (1+0)
-      selection: weighted_random
+      selection: best_move
       # max_depth: 20                    # Limit book depth so engine evaluates positions
       names:
         # - kara
@@ -135,7 +135,7 @@ opening_books:
         # - kara
         # - nimas
     0.5+0_black:                             
-      selection: weighted_random
+      selection: best_move
       names:
         - white_2
     1+0_white:                            
@@ -143,7 +143,7 @@ opening_books:
       names:
         - nimas
     1+0_black:                            
-      selection: weighted_random
+      selection: best_move
       names:
         - white_2
     3+0_white:                             
@@ -156,7 +156,7 @@ opening_books:
         - probook
         # - white_1
     3+0_black:                             
-      selection: weighted_random
+      selection: best_move
       names:
         # - owen_bullet
         # - black_tournament
@@ -174,7 +174,7 @@ opening_books:
         # - owen_rapid
         - nimas
     blitz_black:                             
-      selection: weighted_random
+      selection: best_move
       names:
         # - white_3
         - white_2
@@ -192,9 +192,16 @@ opening_books:
         - white_3
       # max_depth: 4
     standard_black:                           
-      selection: weighted_random
+      selection: best_move
       names:
+        # - white_3
         - white_2
+        - nimas
+        - small
+        - probook
+        # - white_1
+        # - owen_rapid
+        - black_tournament
       # max_depth: 4
     standard_white_tournament:
       selection: best_move
@@ -582,6 +589,7 @@ books:
   white_tournament_2: "./books/std/White_tournament_2.bin"
   black_tournament: "./books/std/black_tournament_1.bin"
   fayefish: "./books/std/fayefish.bin"
+
 
 
 
