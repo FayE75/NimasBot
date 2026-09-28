@@ -1,0 +1,62 @@
+name: Apply MM config fix v2
+
+on:
+  push:
+    branches:
+      - matchmaking-config-fix
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: matchmaking-config-fix
+          fetch-depth: 0
+
+      - name: Patch config
+        run: |
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          path = Path('config.yml')
+          text = path.read_text()
+          start = text.index('matchmaking:\n')
+          end = text.index('\nmessages:\n', start)
+          encoded = 'bWF0Y2htYWtpbmc6CiAgZGVsYXk6IDEwCiAgdGltZW91dDogMjAKICBzZWxlY3Rpb246IHdlaWdodGVkX3JhbmRvbQogIHR5cGVzOgogICAgYnVsbGV0XzE6CiAgICAgIHRjOiAxKzEKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogc3RhbmRhcmQKICAgICAgd2VpZ2h0OiAxMzAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYnVsbGV0XzI6CiAgICAgIHRjOiAxKzAKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogc3RhbmRhcmQKICAgICAgd2VpZ2h0OiAxNTAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYnVsbGV0XzM6CiAgICAgIHRjOiAwLjUrMAogICAgICByYXRlZDogdHJ1ZQogICAgICB2YXJpYW50OiBzdGFuZGFyZAogICAgICB3ZWlnaHQ6IDExMAogICAgICBtdWx0aXBsaWVyOiAxCiAgICAgIG1pbl9yYXRpbmdfZGlmZjogMAogICAgICBtYXhfcmF0aW5nX2RpZmY6IDEwMDAwCiAgICBibGl0el8xOgogICAgICB0YzogMysxCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IHN0YW5kYXJkCiAgICAgIHdlaWdodDogNjUKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYmxpdHpfMjoKICAgICAgdGM6IDMrMAogICAgICByYXRlZDogdHJ1ZQogICAgICB2YXJpYW50OiBzdGFuZGFyZAogICAgICB3ZWlnaHQ6IDgwCiAgICAgIG11bHRpcGxpZXI6IDEKICAgICAgbWluX3JhdGluZ19kaWZmOiAwCiAgICAgIG1heF9yYXRpbmdfZGlmZjogMTAwMDAKICAgIGNoZXNzOTYwXzE6CiAgICAgIHRjOiAxKzEKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogY2hlc3M5NjAKICAgICAgd2VpZ2h0OiAyMAogICAgICBtdWx0aXBsaWVyOiAxCiAgICAgIG1pbl9yYXRpbmdfZGlmZjogMAogICAgICBtYXhfcmF0aW5nX2RpZmY6IDEwMDAwCiAgICBjaGVzczk2MF8yOgogICAgICB0YzogMSswCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IGNoZXNzOTYwCiAgICAgIHdlaWdodDogMTUKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgY2hlc3M5NjBfMzoKICAgICAgdGM6IDAuNSswCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IGNoZXNzOTYwCiAgICAgIHdlaWdodDogMTAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAo='
+          block = base64.b64decode(encoded).decode()
+          path.write_text(text[:start] + block + text[end:])
+          PY
+
+      - name: Validate
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+          cfg = yaml.safe_load(Path('config.yml').read_text())
+          mm = cfg['matchmaking']
+          assert mm['delay'] == 10
+          assert mm['timeout'] == 20
+          assert mm['selection'] == 'weighted_random'
+          assert len(mm['types']) == 8
+          for item in mm['types'].values():
+              assert item['multiplier'] == 1
+              assert item['min_rating_diff'] == 0
+              assert item['max_rating_diff'] == 10000
+          print('Config valid')
+          PY
+
+      - name: Commit clean patch
+        run: |
+          rm -f .github/workflows/apply-matchmaking-config-fix.yml
+          rm -f .github/workflows/apply-mm-fix-v2.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Tune matchmaking config for active opponent search"
+          git push origin HEAD:matchmaking-config-fix
