@@ -1,0 +1,136 @@
+name: Apply matchmaking config fix
+
+on:
+  push:
+    branches: [ matchmaking-config-fix ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v5
+        with:
+          ref: matchmaking-config-fix
+          fetch-depth: 0
+
+      - name: Replace matchmaking config
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('config.yml')
+          text = path.read_text()
+          start = text.index('matchmaking:\n')
+          end = text.index('\nmessages:\n', start)
+
+          block = '''matchmaking:
+  delay: 10
+  timeout: 20
+  selection: weighted_random
+  types:
+    bullet_1:
+      tc: 1+1
+      rated: true
+      variant: standard
+      weight: 130
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    bullet_2:
+      tc: 1+0
+      rated: true
+      variant: standard
+      weight: 150
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    bullet_3:
+      tc: 0.5+0
+      rated: true
+      variant: standard
+      weight: 110
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    blitz_1:
+      tc: 3+1
+      rated: true
+      variant: standard
+      weight: 65
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    blitz_2:
+      tc: 3+0
+      rated: true
+      variant: standard
+      weight: 80
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    chess960_1:
+      tc: 1+1
+      rated: true
+      variant: chess960
+      weight: 20
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    chess960_2:
+      tc: 1+0
+      rated: true
+      variant: chess960
+      weight: 15
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+    chess960_3:
+      tc: 0.5+0
+      rated: true
+      variant: chess960
+      weight: 10
+      multiplier: 1
+      min_rating_diff: 0
+      max_rating_diff: 10000
+'''
+
+          path.write_text(text[:start] + block + text[end:])
+          PY
+
+      - name: Validate YAML and matchmaking fields
+        run: |
+          python3 -m pip install -q pyyaml
+          python3 - <<'PY'
+          import yaml
+          from pathlib import Path
+
+          cfg = yaml.safe_load(Path('config.yml').read_text())
+          mm = cfg['matchmaking']
+          assert mm['delay'] == 10
+          assert mm['timeout'] == 20
+          assert mm['selection'] == 'weighted_random'
+          assert len(mm['types']) == 8
+          allowed = {'tc','rated','variant','weight','multiplier','min_rating_diff','max_rating_diff'}
+          for name, item in mm['types'].items():
+              assert set(item) <= allowed, (name, set(item) - allowed)
+              assert isinstance(item['tc'], str)
+              assert item['rated'] is True
+              assert item['multiplier'] == 1
+              assert item['min_rating_diff'] == 0
+              assert item['max_rating_diff'] == 10000
+          print('matchmaking config validation OK')
+          PY
+
+      - name: Remove one-shot updater and commit config
+        run: |
+          rm .github/workflows/apply-matchmaking-config-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add config.yml .github/workflows/apply-matchmaking-config-fix.yml
+          git diff --cached --check
+          git commit -m "Tune matchmaking config for active opponent search"
+          git push origin HEAD:matchmaking-config-fix
