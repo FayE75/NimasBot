@@ -20,84 +20,13 @@ jobs:
       - name: Replace matchmaking config
         run: |
           python3 - <<'PY'
+          import base64
           from pathlib import Path
-
           path = Path('config.yml')
           text = path.read_text()
           start = text.index('matchmaking:\n')
           end = text.index('\nmessages:\n', start)
-
-          block = '''matchmaking:
-  delay: 10
-  timeout: 20
-  selection: weighted_random
-  types:
-    bullet_1:
-      tc: 1+1
-      rated: true
-      variant: standard
-      weight: 130
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    bullet_2:
-      tc: 1+0
-      rated: true
-      variant: standard
-      weight: 150
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    bullet_3:
-      tc: 0.5+0
-      rated: true
-      variant: standard
-      weight: 110
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    blitz_1:
-      tc: 3+1
-      rated: true
-      variant: standard
-      weight: 65
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    blitz_2:
-      tc: 3+0
-      rated: true
-      variant: standard
-      weight: 80
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    chess960_1:
-      tc: 1+1
-      rated: true
-      variant: chess960
-      weight: 20
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    chess960_2:
-      tc: 1+0
-      rated: true
-      variant: chess960
-      weight: 15
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-    chess960_3:
-      tc: 0.5+0
-      rated: true
-      variant: chess960
-      weight: 10
-      multiplier: 1
-      min_rating_diff: 0
-      max_rating_diff: 10000
-'''
-
+          block = base64.b64decode('bWF0Y2htYWtpbmc6CiAgZGVsYXk6IDEwCiAgdGltZW91dDogMjAKICBzZWxlY3Rpb246IHdlaWdodGVkX3JhbmRvbQogIHR5cGVzOgogICAgYnVsbGV0XzE6CiAgICAgIHRjOiAxKzEKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogc3RhbmRhcmQKICAgICAgd2VpZ2h0OiAxMzAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYnVsbGV0XzI6CiAgICAgIHRjOiAxKzAKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogc3RhbmRhcmQKICAgICAgd2VpZ2h0OiAxNTAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYnVsbGV0XzM6CiAgICAgIHRjOiAwLjUrMAogICAgICByYXRlZDogdHJ1ZQogICAgICB2YXJpYW50OiBzdGFuZGFyZAogICAgICB3ZWlnaHQ6IDExMAogICAgICBtdWx0aXBsaWVyOiAxCiAgICAgIG1pbl9yYXRpbmdfZGlmZjogMAogICAgICBtYXhfcmF0aW5nX2RpZmY6IDEwMDAwCiAgICBibGl0el8xOgogICAgICB0YzogMysxCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IHN0YW5kYXJkCiAgICAgIHdlaWdodDogNjUKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgYmxpdHpfMjoKICAgICAgdGM6IDMrMAogICAgICByYXRlZDogdHJ1ZQogICAgICB2YXJpYW50OiBzdGFuZGFyZAogICAgICB3ZWlnaHQ6IDgwCiAgICAgIG11bHRpcGxpZXI6IDEKICAgICAgbWluX3JhdGluZ19kaWZmOiAwCiAgICAgIG1heF9yYXRpbmdfZGlmZjogMTAwMDAKICAgIGNoZXNzOTYwXzE6CiAgICAgIHRjOiAxKzEKICAgICAgcmF0ZWQ6IHRydWUKICAgICAgdmFyaWFudDogY2hlc3M5NjAKICAgICAgd2VpZ2h0OiAyMAogICAgICBtdWx0aXBsaWVyOiAxCiAgICAgIG1pbl9yYXRpbmdfZGlmZjogMAogICAgICBtYXhfcmF0aW5nX2RpZmY6IDEwMDAwCiAgICBjaGVzczk2MF8yOgogICAgICB0YzogMSswCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IGNoZXNzOTYwCiAgICAgIHdlaWdodDogMTUKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAogICAgY2hlc3M5NjBfMzoKICAgICAgdGM6IDAuNSswCiAgICAgIHJhdGVkOiB0cnVlCiAgICAgIHZhcmlhbnQ6IGNoZXNzOTYwCiAgICAgIHdlaWdodDogMTAKICAgICAgbXVsdGlwbGllcjogMQogICAgICBtaW5fcmF0aW5nX2RpZmY6IDAKICAgICAgbWF4X3JhdGluZ19kaWZmOiAxMDAwMAo=').decode()
           path.write_text(text[:start] + block + text[end:])
           PY
 
@@ -107,7 +36,6 @@ jobs:
           python3 - <<'PY'
           import yaml
           from pathlib import Path
-
           cfg = yaml.safe_load(Path('config.yml').read_text())
           mm = cfg['matchmaking']
           assert mm['delay'] == 10
@@ -125,7 +53,7 @@ jobs:
           print('matchmaking config validation OK')
           PY
 
-      - name: Remove one-shot updater and commit config
+      - name: Remove updater and commit config
         run: |
           rm .github/workflows/apply-matchmaking-config-fix.yml
           git config user.name "github-actions[bot]"
