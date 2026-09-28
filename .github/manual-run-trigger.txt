@@ -1,0 +1,1 @@
+Manual trigger for Lichess Bot workflow on 2026-09-28.
