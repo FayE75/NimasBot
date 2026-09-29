@@ -101,7 +101,8 @@ jobs:
   
         ROOT="$(pwd)"
         rm -rf Omega || true
-        git clone https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
+        git clone --branch main --single-branch https://x-access-token:${{ secrets.OMEGA_PAT }}@github.com/FayE75/Omega.git Omega
+        echo "Using Omega commit: $(git -C Omega rev-parse HEAD)"
         if [ ! -d Omega/src ]; then
           exit 1
         fi
