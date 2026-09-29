@@ -66,33 +66,27 @@ class Game:
                     event = event['state']
 
             if event.get('wdraw') or event.get('bdraw'):
-                is_0_5_0_game = info.tc_str == '0.5+0'
                 is_opponent_draw_offer = (
                     (lichess_game.is_white and event.get('bdraw')) or
                     (not lichess_game.is_white and event.get('wdraw'))
                 )
                 if is_opponent_draw_offer and not self.bot_offered_draw:
-                    should_accept_draw = False
-                    
-                    if is_0_5_0_game:
-                        is_tournament_game = info.tournament_id is not None
-                        allow_in_tournaments = self.config.offer_draw.allow_in_tournaments
-                        accept_30_second = self.config.offer_draw.accept_30_second_draws
-                        
-                        if is_tournament_game and allow_in_tournaments:
-                            should_accept_draw = self._should_accept_draw(lichess_game)
-                        elif accept_30_second:
-                            should_accept_draw = self._should_accept_draw(lichess_game)
-                        else:
-                            should_accept_draw = False
-                    else:
-                        should_accept_draw = self._should_accept_draw(lichess_game)
-                    
+                    is_tournament_game = info.tournament_id is not None
+                    draw_agreement_enabled = (
+                        self.config.offer_draw.enabled
+                        and self.config.offer_draw.allow_in_tournaments
+                        and is_tournament_game
+                    )
+                    should_accept_draw = (
+                        draw_agreement_enabled
+                        and self._should_accept_draw(lichess_game)
+                    )
+
                     if should_accept_draw:
                         await self.api.accept_draw(self.game_id)
-                    elif not is_0_5_0_game:
+                    else:
                         await self.api.decline_draw(self.game_id)
-                    
+
                 self.bot_offered_draw = False
             else:
                 self.bot_offered_draw = False
@@ -127,32 +121,37 @@ class Game:
         if not self.config.offer_draw.enabled:
             return False
 
+        if not self.config.offer_draw.allow_in_tournaments:
+            return False
+
+        if lichess_game.game_info.tournament_id is None:
+            return False
+
         current_move = lichess_game.board.fullmove_number - (not lichess_game.is_white)
         is_0_5_0_game = hasattr(lichess_game.game_info, 'tc_str') and lichess_game.game_info.tc_str == '0.5+0'
-        
-        # Special case for 30-second games when accept_30_second_draws is true
+
+        # Special case for 30-second tournament games when accept_30_second_draws is true
         if is_0_5_0_game and self.config.offer_draw.accept_30_second_draws:
-            # More lenient criteria for 30-second games
-            if current_move < 10:  # Minimum 10 moves
+            if current_move < 10:
                 return False
-                
+
             scores_count = len(lichess_game.scores)
             if scores_count > 0:
                 last_score = lichess_game.scores[-1].relative.score(mate_score=40_000)
-                return abs(last_score) <= self.config.offer_draw.score * 2  # More lenient score threshold
+                return abs(last_score) <= self.config.offer_draw.score * 2
             else:
-                return current_move > 20  # Accept if no scores available but game is long enough
-                
-        # Normal draw evaluation for other games
+                return current_move > 20
+
+        # Normal draw evaluation for tournament games
         if current_move < self.config.offer_draw.min_game_length:
             return False
 
         scores_count = len(lichess_game.scores)
         consecutive_moves = self.config.offer_draw.consecutive_moves
-        
+
         is_bullet = is_0_5_0_game
         min_scores_needed = max(1, consecutive_moves // 3) if is_bullet else consecutive_moves
-        
+
         if scores_count < min_scores_needed:
             if current_move > 50:
                 if scores_count > 0:
@@ -164,7 +163,7 @@ class Game:
 
         draw_score = self.config.offer_draw.score
         recent_scores = list(islice(lichess_game.scores, scores_count - min_scores_needed, None))
-        
+
         for score in recent_scores:
             score_cp = score.relative.score(mate_score=40_000)
             if abs(score_cp) > draw_score:
@@ -179,8 +178,15 @@ class Game:
         if lichess_move.resign:
             await self.api.resign_game(self.game_id)
         else:
-            self.bot_offered_draw = lichess_move.offer_draw
-            await self.api.send_move(self.game_id, lichess_move.uci_move, lichess_move.offer_draw)
+            is_tournament_game = lichess_game.game_info.tournament_id is not None
+            offer_draw = (
+                lichess_move.offer_draw
+                and self.config.offer_draw.enabled
+                and self.config.offer_draw.allow_in_tournaments
+                and is_tournament_game
+            )
+            self.bot_offered_draw = offer_draw
+            await self.api.send_move(self.game_id, lichess_move.uci_move, offer_draw)
             await chatter.print_eval()
         self.move_task = None
 
